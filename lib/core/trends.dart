@@ -10,30 +10,42 @@ class TrendPoint {
   const TrendPoint(this.date, this.value);
 }
 
-/// Net profit (sale − purchase) for each of the last [days] days, oldest
-/// first — feeds the Dashboard's profit trend chart.
-List<TrendPoint> dailyNetProfitSeries(
-  List<Entry> purchases,
-  List<Entry> sales, {
+/// Realized profit for each of the last [days] days, oldest first — feeds
+/// the Dashboard's profit trend chart. Only sales count: buying inventory
+/// is an investment, not a loss, so a purchase-heavy day with no sales
+/// shows 0 rather than a dip. Each sale's margin is its amount minus the
+/// brand's current purchase rate × the quantity sold.
+List<TrendPoint> dailyRealizedProfitSeries(
+  List<Entry> sales,
+  List<Brand> brands, {
   int days = 7,
 }) {
+  final costRateByBrand = {for (final b in brands) b.id: b.purchaseRate};
   final today = DateTime.now();
   final startOfToday = DateTime(today.year, today.month, today.day);
   return [
     for (var i = days - 1; i >= 0; i--)
       TrendPoint(
         startOfToday.subtract(Duration(days: i)),
-        _amountOnDay(sales, startOfToday.subtract(Duration(days: i))) -
-            _amountOnDay(purchases, startOfToday.subtract(Duration(days: i))),
+        _marginOnDay(
+          sales,
+          costRateByBrand,
+          startOfToday.subtract(Duration(days: i)),
+        ),
       ),
   ];
 }
 
-double _amountOnDay(List<Entry> entries, DateTime day) {
+double _marginOnDay(
+  List<Entry> sales,
+  Map<int?, double> costRateByBrand,
+  DateTime day,
+) {
   final dayIso = formatDateIso(day);
-  return entries
-      .where((e) => e.date == dayIso)
-      .fold<double>(0, (sum, e) => sum + e.amount);
+  return sales.where((e) => e.date == dayIso).fold<double>(0, (sum, e) {
+    final costRate = costRateByBrand[e.brandId] ?? 0;
+    return sum + (e.amount - costRate * e.totalCFT);
+  });
 }
 
 /// Percent change in [entries]' total amount this calendar month vs last.

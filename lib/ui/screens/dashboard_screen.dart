@@ -6,7 +6,7 @@ import '../../core/calc.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
 import '../../core/trends.dart'
-    show TrendPoint, dailyNetProfitSeries, monthOverMonthChangePercent;
+    show TrendPoint, dailyRealizedProfitSeries, monthOverMonthChangePercent;
 import '../../data/data_bus.dart';
 import '../../data/repos.dart';
 import '../theme/tokens.dart';
@@ -83,8 +83,8 @@ Future<_Totals> _loadTotals({int trendDays = 7}) async {
     totalSaleAmount: totalSaleAmount,
     totalCFTPurchased: totalCFTPurchased,
     totalCFTSold: totalCFTSold,
-    profit: calcProfit(totalSaleAmount, totalPurchaseAmount),
-    profitTrend: dailyNetProfitSeries(purchases, sales, days: trendDays),
+    profit: calcRealizedProfit(sales, brands),
+    profitTrend: dailyRealizedProfitSeries(sales, brands, days: trendDays),
     purchaseChangePercent: monthOverMonthChangePercent(purchases),
     saleChangePercent: monthOverMonthChangePercent(sales),
     brands: brands,
