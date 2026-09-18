@@ -1,5 +1,6 @@
 // Framework-free trend helpers derived from purchase/sale entries — no
 // separate history table, everything is computed from the existing stores.
+import 'calc.dart';
 import 'format.dart';
 import 'models.dart';
 
@@ -14,13 +15,14 @@ class TrendPoint {
 /// the Dashboard's profit trend chart. Only sales count: buying inventory
 /// is an investment, not a loss, so a purchase-heavy day with no sales
 /// shows 0 rather than a dip. Each sale's margin is its amount minus the
-/// brand's current purchase rate × the quantity sold.
+/// average price actually paid for that brand × the quantity sold.
 List<TrendPoint> dailyRealizedProfitSeries(
   List<Entry> sales,
+  List<Entry> purchases,
   List<Brand> brands, {
   int days = 7,
 }) {
-  final costRateByBrand = {for (final b in brands) b.id: b.purchaseRate};
+  final costRates = costRateByBrand(purchases, brands);
   final today = DateTime.now();
   final startOfToday = DateTime(today.year, today.month, today.day);
   return [
@@ -29,7 +31,7 @@ List<TrendPoint> dailyRealizedProfitSeries(
         startOfToday.subtract(Duration(days: i)),
         _marginOnDay(
           sales,
-          costRateByBrand,
+          costRates,
           startOfToday.subtract(Duration(days: i)),
         ),
       ),
@@ -38,12 +40,12 @@ List<TrendPoint> dailyRealizedProfitSeries(
 
 double _marginOnDay(
   List<Entry> sales,
-  Map<int?, double> costRateByBrand,
+  Map<int, double> costRates,
   DateTime day,
 ) {
   final dayIso = formatDateIso(day);
   return sales.where((e) => e.date == dayIso).fold<double>(0, (sum, e) {
-    final costRate = costRateByBrand[e.brandId] ?? 0;
+    final costRate = costRates[e.brandId] ?? 0;
     return sum + (e.amount - costRate * e.totalCFT);
   });
 }

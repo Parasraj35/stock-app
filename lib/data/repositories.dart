@@ -37,6 +37,13 @@ abstract class PartyRepository {
   Future<void> delete(int id);
 }
 
+abstract class VehicleRepository {
+  Future<List<Vehicle>> list();
+  Future<Vehicle> add(Vehicle vehicle);
+  Future<void> update(Vehicle vehicle);
+  Future<void> delete(int id);
+}
+
 // Seeded with the same value for both rates — purchase/sale margins are set
 // per-brand afterward via the Brands screen.
 const _defaultBrands = [
@@ -164,6 +171,44 @@ class SqlitePartyRepository implements PartyRepository {
   @override
   Future<void> delete(int id) async {
     await _db.db.delete(partiesTable, where: 'id = ?', whereArgs: [id]);
+    DataBus.instance.notifyChanged();
+  }
+}
+
+class SqliteVehicleRepository implements VehicleRepository {
+  SqliteVehicleRepository(this._db);
+  final AppDatabase _db;
+
+  @override
+  Future<List<Vehicle>> list() async {
+    final rows = await _db.db.query(vehiclesTable, orderBy: 'vehicleNo');
+    return rows.map(Vehicle.fromMap).toList();
+  }
+
+  @override
+  Future<Vehicle> add(Vehicle vehicle) async {
+    final id = await _db.db.insert(
+      vehiclesTable,
+      vehicle.toMap()..remove('id'),
+    );
+    DataBus.instance.notifyChanged();
+    return vehicle.copyWith(id: id);
+  }
+
+  @override
+  Future<void> update(Vehicle vehicle) async {
+    await _db.db.update(
+      vehiclesTable,
+      vehicle.toMap(),
+      where: 'id = ?',
+      whereArgs: [vehicle.id],
+    );
+    DataBus.instance.notifyChanged();
+  }
+
+  @override
+  Future<void> delete(int id) async {
+    await _db.db.delete(vehiclesTable, where: 'id = ?', whereArgs: [id]);
     DataBus.instance.notifyChanged();
   }
 }

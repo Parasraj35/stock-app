@@ -1,71 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
 
-import '../../core/calc.dart';
-import '../../core/models.dart';
-import '../../data/pdf_export.dart';
-import '../../data/repos.dart';
-import '../theme/tokens.dart';
 import '../widgets/settings_row.dart';
 import 'merged_report_screen.dart';
 import 'monthly_report_screen.dart';
 import 'party_statement_screen.dart';
+import 'stock_screen.dart';
+import 'vehicle_report_screen.dart';
 
-/// Hub for PDF reports — Purchase/Sale (with monthly breakdown), Party
-/// Statement, and Stock, reachable from Settings.
-class ReportsScreen extends StatefulWidget {
+/// Hub for reports — Purchase, Sale, combined, Party Statement, Vehicle and Stock.
+/// Each opens an in-app view of every entry with Share and Print in the top
+/// bar, reachable from Settings.
+class ReportsScreen extends StatelessWidget {
   const ReportsScreen({super.key});
-
-  @override
-  State<ReportsScreen> createState() => _ReportsScreenState();
-}
-
-class _ReportsScreenState extends State<ReportsScreen> {
-  bool _exportingStock = false;
-
-  Future<void> _exportStockReport() async {
-    setState(() => _exportingStock = true);
-    try {
-      final results = await Future.wait([
-        Repos.instance.brands.list(),
-        Repos.instance.purchases.list(),
-        Repos.instance.sales.list(),
-        Repos.instance.users.getUser(),
-      ]);
-      final brands = results[0] as List<Brand>;
-      final purchases = results[1] as List<Entry>;
-      final sales = results[2] as List<Entry>;
-      final user = results[3] as AppUser?;
-
-      final rows = [
-        for (final b in brands)
-          StockReportRow(
-            brandName: b.name,
-            purchaseRate: b.purchaseRate,
-            saleRate: b.saleRate,
-            stockCft: calcStock(
-              purchases
-                  .where((e) => e.brandId == b.id)
-                  .fold<double>(0, (sum, e) => sum + e.totalCFT),
-              sales
-                  .where((e) => e.brandId == b.id)
-                  .fold<double>(0, (sum, e) => sum + e.totalCFT),
-            ),
-          ),
-      ];
-      final bytes = await buildStockReportPdf(
-        businessName: user?.businessName,
-        rows: rows,
-      );
-      if (!mounted) return;
-      await Printing.layoutPdf(
-        onLayout: (format) async => bytes,
-        name: 'stock_report.pdf',
-      );
-    } finally {
-      if (mounted) setState(() => _exportingStock = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +23,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           SettingsRow(
             icon: Icons.south_west,
             label: 'Purchase Report',
-            subtitle: 'Monthly breakdown and full history',
+            subtitle: 'Every purchase, month by month',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -88,7 +34,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           SettingsRow(
             icon: Icons.north_east,
             label: 'Sale Report',
-            subtitle: 'Monthly breakdown and full history',
+            subtitle: 'Every sale, month by month',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -99,7 +45,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           SettingsRow(
             icon: Icons.swap_vert,
             label: 'Purchase & Sale Report',
-            subtitle: 'Combined monthly report with net profit',
+            subtitle: 'Every purchase and sale together, with net',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => MergedReportScreen()),
@@ -115,17 +61,22 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ),
           ),
           SettingsRow(
+            icon: Icons.local_shipping_outlined,
+            label: 'Vehicle Report',
+            subtitle: 'Every trip by vehicle, with totals',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => VehicleReportScreen()),
+            ),
+          ),
+          SettingsRow(
             icon: Icons.inventory_2_outlined,
             label: 'Stock Report',
             subtitle: 'Current stock on hand per brand',
-            onTap: _exportingStock ? () {} : _exportStockReport,
-            trailing: _exportingStock
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(Icons.ios_share, color: AppColors.inactiveIcon),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => StockScreen()),
+            ),
           ),
         ],
       ),

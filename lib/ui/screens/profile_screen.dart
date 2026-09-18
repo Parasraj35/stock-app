@@ -64,11 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ownerGender: _gender,
         ),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Profile saved')));
-      }
+      if (mounted) Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -115,7 +111,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadii.card)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadii.card),
+        ),
       ),
       builder: (context) => SafeArea(
         child: Column(

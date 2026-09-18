@@ -63,6 +63,34 @@ class Party {
   );
 }
 
+/// A fixed vehicle and how much it carries per trip. Typing that CFT on a
+/// Purchase/Sale fills in this vehicle's number.
+class Vehicle {
+  final int? id;
+  final String vehicleNo;
+  final double cft;
+
+  const Vehicle({this.id, required this.vehicleNo, required this.cft});
+
+  Vehicle copyWith({int? id, String? vehicleNo, double? cft}) => Vehicle(
+    id: id ?? this.id,
+    vehicleNo: vehicleNo ?? this.vehicleNo,
+    cft: cft ?? this.cft,
+  );
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'vehicleNo': vehicleNo,
+    'cft': cft,
+  };
+
+  factory Vehicle.fromMap(Map<String, Object?> map) => Vehicle(
+    id: map['id'] as int?,
+    vehicleNo: map['vehicleNo'] as String,
+    cft: (map['cft'] as num).toDouble(),
+  );
+}
+
 /// Shared shape for both Purchase and Sale entries — same fields, same
 /// calculation rules. Which table it lives in is decided by the repository,
 /// not by this model, so the UI/list/form code can be reused for both.
@@ -90,6 +118,10 @@ class Entry {
     required this.totalCFT,
     required this.amount,
   });
+
+  /// The per-cft price this entry was saved at (amount ÷ totalCFT). Derived,
+  /// so a per-entry price change needs no extra stored column.
+  double get ratePerCft => totalCFT > 0 ? amount / totalCFT : 0;
 
   Entry copyWith({
     int? id,

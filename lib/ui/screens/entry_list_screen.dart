@@ -4,10 +4,11 @@ import '../../core/format.dart';
 import '../../core/models.dart';
 import '../../data/data_bus.dart';
 import '../../data/repositories.dart';
-import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/brand_icon.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/profile_header_button.dart';
 import 'entry_form_screen.dart';
 
 /// List + add/edit/delete screen shared by both Purchase and Sale — same
@@ -31,7 +32,10 @@ class EntryListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: const [ProfileHeaderButton(), SizedBox(width: 8)],
+      ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'entryListFab_$title',
         backgroundColor: _accentColor,
@@ -159,47 +163,21 @@ class EntryListScreen extends StatelessWidget {
   }
 
   Future<void> _confirmDelete(BuildContext context, Entry e) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete $title entry?'),
-        content: Text(
-          'Delete the entry for "${e.party}"? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('DELETE', style: TextStyle(color: AppColors.negative)),
-          ),
-        ],
-      ),
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Delete $title entry?',
+      message: 'Delete the entry for "${e.party}"? This cannot be undone.',
+      confirmLabel: 'DELETE',
     );
-    if (confirmed == true) {
-      await repository.delete(e.id!);
-    }
+    if (confirmed) await repository.delete(e.id!);
   }
 
-  Future<void> _openForm(BuildContext context, {Entry? existing}) async {
-    final results = await Future.wait([
-      Repos.instance.brands.list(),
-      Repos.instance.parties.list(),
-    ]);
-    if (!context.mounted) return;
-    Navigator.push(
+  Future<void> _openForm(BuildContext context, {Entry? existing}) {
+    return openEntryForm(
       context,
-      MaterialPageRoute(
-        builder: (context) => EntryFormScreen(
-          title: title,
-          repository: repository,
-          brands: results[0] as List<Brand>,
-          parties: results[1] as List<Party>,
-          existing: existing,
-        ),
-      ),
+      title: title,
+      repository: repository,
+      existing: existing,
     );
   }
 }
@@ -220,7 +198,7 @@ class _EntryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rate = entry.totalCFT > 0 ? entry.amount / entry.totalCFT : 0.0;
+    final rate = entry.ratePerCft;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       elevation: 1.5,
@@ -369,7 +347,7 @@ class _EntryCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Rate ${formatPkrCurrency(rate)}/cft',
+                            'Rate Rs ${formatDecimal(rate)}/cft',
                             style: TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,

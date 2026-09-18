@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'core/models.dart';
+import 'data/auth_session.dart';
 import 'data/data_bus.dart';
 import 'data/repos.dart';
 import 'ui/app_shell.dart';
@@ -58,6 +59,7 @@ class _AuthGateState extends State<_AuthGate> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     DataBus.instance.addListener(_reloadUser);
+    AuthSession.instance.addListener(_logout);
     _reloadUser();
   }
 
@@ -65,8 +67,16 @@ class _AuthGateState extends State<_AuthGate> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     DataBus.instance.removeListener(_reloadUser);
+    AuthSession.instance.removeListener(_logout);
     super.dispose();
   }
+
+  /// Log out: back to the login screen, and the PIN lock is skipped since the
+  /// password is what's being asked for again.
+  void _logout() => setState(() {
+    _authenticated = false;
+    _forceFullLogin = true;
+  });
 
   Future<void> _reloadUser() async {
     final user = await Repos.instance.users.getUser();

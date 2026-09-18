@@ -28,19 +28,40 @@ EntryTotals calcEntryTotals(
   return EntryTotals(totalCFT, amount);
 }
 
-double calcProfit(double totalSaleAmount, double totalPurchaseAmount) {
-  return totalSaleAmount - totalPurchaseAmount;
+/// What each brand's stock actually cost per cft: the average price paid
+/// across all of that brand's purchases (so per-entry price changes are
+/// respected), falling back to the brand's default purchase rate while
+/// nothing has been bought yet.
+Map<int, double> costRateByBrand(List<Entry> purchases, List<Brand> brands) {
+  final cft = <int, double>{};
+  final amount = <int, double>{};
+  for (final p in purchases) {
+    cft[p.brandId] = (cft[p.brandId] ?? 0) + p.totalCFT;
+    amount[p.brandId] = (amount[p.brandId] ?? 0) + p.amount;
+  }
+  final rates = <int, double>{
+    for (final b in brands)
+      if (b.id != null) b.id!: b.purchaseRate,
+  };
+  for (final id in cft.keys) {
+    final total = cft[id]!;
+    if (total > 0) rates[id] = amount[id]! / total;
+  }
+  return rates;
 }
 
-/// Realized profit — margin actually earned on stock that's been sold,
-/// using each brand's current purchase rate as its cost basis. Unlike
-/// [calcProfit] (raw revenue minus all spend), buying inventory that
-/// hasn't sold yet doesn't count as a loss here — it's still an asset,
-/// not money lost. Only selling below cost does.
-double calcRealizedProfit(List<Entry> sales, List<Brand> brands) {
-  final costRateByBrand = {for (final b in brands) b.id: b.purchaseRate};
+/// Realized profit — margin actually earned on stock that's been sold, using
+/// the average price actually paid for each brand as its cost basis. Buying
+/// inventory that hasn't sold yet doesn't count as a loss here — it's still
+/// an asset, not money lost. Only selling below cost does.
+double calcRealizedProfit(
+  List<Entry> sales,
+  List<Entry> purchases,
+  List<Brand> brands,
+) {
+  final costRates = costRateByBrand(purchases, brands);
   return sales.fold<double>(0, (sum, e) {
-    final costRate = costRateByBrand[e.brandId] ?? 0;
+    final costRate = costRates[e.brandId] ?? 0;
     return sum + (e.amount - costRate * e.totalCFT);
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/calc.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
+import '../../core/vehicles.dart';
 import '../../data/repos.dart';
 import '../../data/repositories.dart';
 import '../theme/tokens.dart';
@@ -17,6 +18,7 @@ class EntryFormScreen extends StatefulWidget {
     required this.repository,
     required this.brands,
     required this.parties,
+    required this.vehicles,
     this.existing,
   });
 
@@ -24,6 +26,9 @@ class EntryFormScreen extends StatefulWidget {
   final EntryRepository repository;
   final List<Brand> brands;
   final List<Party> parties;
+
+  /// The fixed vehicles — typing a vehicle's CFT fills in its number.
+  final List<Vehicle> vehicles;
   final Entry? existing;
 
   @override
@@ -46,6 +51,16 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   late final _vehicleNo = TextEditingController(
     text: widget.existing?.vehicleNo ?? '',
   );
+  // Per-entry price: starts at the brand's default rate (or, when editing, at
+  // the price this entry was saved with) and can be changed for this entry
+  // only — the brand's own default is never touched.
+  final _rate = TextEditingController();
+  // True while the vehicle field holds a number we filled in from the CFT
+  // (and the user hasn't typed over it).
+  bool _vehicleIsAuto = false;
+  // The CFT text last acted on, so cursor moves (which also notify the
+  // controller) don't re-run the vehicle lookup.
+  String _lastCftText = '';
   Brand? _selectedBrand;
   bool _submitting = false;
   double? _brandStock;
@@ -66,10 +81,14 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
           .where((b) => b.id == existingBrandId)
           .cast<Brand?>()
           .firstWhere((b) => b != null, orElse: () => null);
+      _rate.text = formatDecimal(widget.existing!.ratePerCft);
     } else if (widget.brands.isNotEmpty) {
       _selectedBrand = widget.brands.first;
+      _rate.text = formatDecimal(_rateFor(_selectedBrand!));
     }
-    for (final c in [_cftPerVehicle, _round]) {
+    _lastCftText = _cftPerVehicle.text;
+    _cftPerVehicle.addListener(_onCftChanged);
+    for (final c in [_round, _rate]) {
       c.addListener(() => setState(() {}));
     }
     _refreshStock();
@@ -103,12 +122,31 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     });
   }
 
+  /// Typing a vehicle's exact CFT fills in its number. If the CFT no longer
+  /// matches and the number was only auto-filled, it's cleared again — a
+  /// number the user typed themselves is left alone.
+  void _onCftChanged() {
+    if (_cftPerVehicle.text == _lastCftText) return;
+    _lastCftText = _cftPerVehicle.text;
+    final cft = double.tryParse(_cftPerVehicle.text.trim());
+    final match = cft == null ? null : vehicleForCft(widget.vehicles, cft);
+    if (match != null) {
+      _vehicleNo.text = match.vehicleNo;
+      _vehicleIsAuto = true;
+    } else if (_vehicleIsAuto) {
+      _vehicleNo.clear();
+      _vehicleIsAuto = false;
+    }
+    setState(() {});
+  }
+
   @override
   void dispose() {
     _party.dispose();
     _partyFocusNode.dispose();
     _cftPerVehicle.dispose();
     _round.dispose();
+    _rate.dispose();
     _vehicleNo.dispose();
     super.dispose();
   }
@@ -120,7 +158,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   EntryTotals get _liveTotals {
     final round = double.tryParse(_round.text.trim()) ?? 0;
     final cft = double.tryParse(_cftPerVehicle.text.trim()) ?? 0;
-    final rate = _selectedBrand != null ? _rateFor(_selectedBrand!) : 0.0;
+    final rate = double.tryParse(_rate.text.trim()) ?? 0;
     return calcEntryTotals(round, cft, rate);
   }
 
@@ -146,7 +184,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       brandName: _selectedBrand!.name,
       cftPerVehicle: double.parse(_cftPerVehicle.text.trim()),
       round: double.parse(_round.text.trim()),
-      vehicleNo: _vehicleNo.text.trim().isEmpty ? null : _vehicleNo.text.trim(),
+      vehicleNo: normalizeVehicleNo(_vehicleNo.text),
       totalCFT: totals.totalCFT,
       amount: totals.amount,
     );
@@ -293,7 +331,12 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                           ),
                       ],
                       onChanged: (b) {
-                        setState(() => _selectedBrand = b);
+                        setState(() {
+                          _selectedBrand = b;
+                          if (b != null) {
+                            _rate.text = formatDecimal(_rateFor(b));
+                          }
+                        });
                         _refreshStock();
                       },
                       validator: (v) => v == null ? 'Select a brand' : null,
@@ -365,11 +408,46 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    TextFormField(
-                      controller: _vehicleNo,
-                      decoration: const InputDecoration(
-                        labelText: 'VEHICLE NO. (OPTIONAL)',
-                      ),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _rate,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: 'RATE (RS/CFT)',
+                              helperText: _selectedBrand == null
+                                  ? null
+                                  : 'Default Rs ${formatDecimal(_rateFor(_selectedBrand!))}',
+                            ),
+                            validator: (v) {
+                              final n = double.tryParse(v?.trim() ?? '');
+                              return (n == null || n <= 0) ? 'Required' : null;
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _vehicleNo,
+                            textCapitalization: TextCapitalization.characters,
+                            decoration: InputDecoration(
+                              labelText: 'VEHICLE NO.',
+                              helperText: _vehicleIsAuto
+                                  ? 'Auto from CFT'
+                                  : null,
+                            ),
+                            onChanged: (_) =>
+                                setState(() => _vehicleIsAuto = false),
+                            validator: (v) => normalizeVehicleNo(v) == null
+                                ? 'Required'
+                                : null,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 22),
                     Container(
@@ -430,7 +508,7 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                           const SizedBox(height: 4),
                           Text(
                             '${_round.text.isEmpty ? '0' : _round.text} × ${_cftPerVehicle.text.isEmpty ? '0' : _cftPerVehicle.text} × '
-                            '${formatPkrCurrency(_selectedBrand != null ? _rateFor(_selectedBrand!) : 0)}',
+                            'Rs ${_rate.text.isEmpty ? '0' : _rate.text}',
                             style: TextStyle(
                               fontSize: 11,
                               color: _palette.highlightText.withValues(
@@ -462,4 +540,33 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
             ),
     );
   }
+}
+
+/// Opens the Purchase/Sale form with the current brands, parties and
+/// vehicles. Shared by the Purchase/Sale lists and the Dashboard's quick add.
+Future<void> openEntryForm(
+  BuildContext context, {
+  required String title,
+  required EntryRepository repository,
+  Entry? existing,
+}) async {
+  final results = await Future.wait([
+    Repos.instance.brands.list(),
+    Repos.instance.parties.list(),
+    Repos.instance.vehicles.list(),
+  ]);
+  if (!context.mounted) return;
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => EntryFormScreen(
+        title: title,
+        repository: repository,
+        brands: results[0] as List<Brand>,
+        parties: results[1] as List<Party>,
+        vehicles: results[2] as List<Vehicle>,
+        existing: existing,
+      ),
+    ),
+  );
 }

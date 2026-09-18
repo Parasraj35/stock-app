@@ -1,13 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../core/calc.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
 import '../../data/data_bus.dart';
+import '../../data/pdf_export.dart';
 import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/brand_icon.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/report_actions.dart';
 
 class _BrandStock {
   final Brand brand;
@@ -47,10 +51,35 @@ class StockScreen extends StatelessWidget {
     ];
   }
 
+  Future<Uint8List> _buildPdf() async {
+    final rows = await _load();
+    final user = await Repos.instance.users.getUser();
+    return buildStockReportPdf(
+      businessName: user?.businessName,
+      rows: [
+        for (final r in rows)
+          StockReportRow(
+            brandName: r.brand.name,
+            purchaseRate: r.brand.purchaseRate,
+            saleRate: r.brand.saleRate,
+            stockCft: r.stock,
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Stock')),
+      appBar: AppBar(
+        title: const Text('Stock'),
+        actions: [
+          ReportActions(
+            filename: pdfFileName('stock_report'),
+            buildPdf: _buildPdf,
+          ),
+        ],
+      ),
       body: AnimatedBuilder(
         animation: DataBus.instance,
         builder: (context, _) {

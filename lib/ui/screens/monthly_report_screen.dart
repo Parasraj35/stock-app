@@ -1,5 +1,6 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
 
 import '../../core/format.dart';
 import '../../core/models.dart';
@@ -9,9 +10,12 @@ import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/date_range_bar.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/report_actions.dart';
+import '../widgets/report_widgets.dart';
 
-/// In-app monthly breakdown for Purchase or Sale, with a From/To date
-/// filter and a PDF export action in the app bar.
+/// In-app Purchase or Sale report: every entry, month by month, with a
+/// From/To date filter. Share/Print in the app bar produce the same list as
+/// a PDF.
 class MonthlyReportScreen extends StatefulWidget {
   const MonthlyReportScreen({super.key, required this.isPurchase});
   final bool isPurchase;
@@ -21,7 +25,7 @@ class MonthlyReportScreen extends StatefulWidget {
 }
 
 class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
-  bool _exporting = false;
+  List<Entry>? _all;
   DateTime? _from;
   DateTime? _to;
 
@@ -29,150 +33,166 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   Color get _accentColor =>
       widget.isPurchase ? AppColors.purchaseColor : AppColors.saleColor;
 
-  Future<void> _export(List<Entry> entries) async {
-    setState(() => _exporting = true);
-    try {
-      final user = await Repos.instance.users.getUser();
-      final bytes = await buildEntryReportPdf(
-        title: '$_title Report',
-        businessName: user?.businessName,
-        entries: entries,
-      );
-      if (!mounted) return;
-      await Printing.layoutPdf(
-        onLayout: (format) async => bytes,
-        name: '${_title.toLowerCase()}_report.pdf',
-      );
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final repository = widget.isPurchase
+        ? Repos.instance.purchases
+        : Repos.instance.sales;
+    final entries = await repository.list();
+    if (!mounted) return;
+    setState(() => _all = entries);
+  }
+
+  Future<Uint8List> _buildPdf(List<Entry> entries) async {
+    final user = await Repos.instance.users.getUser();
+    return buildEntryReportPdf(
+      title: '$_title Report',
+      businessName: user?.businessName,
+      entries: entries,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final repository = widget.isPurchase
-        ? Repos.instance.purchases
-        : Repos.instance.sales;
-    final range = DateRange(from: _from, to: _to);
+    final all = _all;
+    final entries = all == null
+        ? null
+        : filterByDateRange(all, DateRange(from: _from, to: _to));
     return Scaffold(
       appBar: AppBar(
         title: Text('$_title Report'),
         actions: [
-          FutureBuilder<List<Entry>>(
-            future: repository.list(),
-            builder: (context, snapshot) {
-              final entries = snapshot.data == null
-                  ? null
-                  : filterByDateRange(snapshot.data!, range);
-              return IconButton(
-                icon: _exporting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.ios_share),
-                onPressed: (entries == null || entries.isEmpty || _exporting)
-                    ? null
-                    : () => _export(entries),
-              );
-            },
+          ReportActions(
+            enabled: entries != null && entries.isNotEmpty,
+            filename: pdfFileName('${_title.toLowerCase()}_report'),
+            buildPdf: () => _buildPdf(entries ?? const []),
           ),
         ],
       ),
-      body: FutureBuilder<List<Entry>>(
-        future: repository.list(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final entries = filterByDateRange(snapshot.data!, range);
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              DateRangeBar(
-                from: _from,
-                to: _to,
-                onChanged: (v) => setState(() {
-                  _from = v.$1;
-                  _to = v.$2;
-                }),
-              ),
-              const SizedBox(height: 16),
-              if (entries.isEmpty)
-                EmptyState(
-                  icon: widget.isPurchase ? Icons.south_west : Icons.north_east,
-                  message: 'No $_title entries in this range.',
-                )
-              else ...[
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _accentColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppRadii.card),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${entries.length} ${_title.toUpperCase()}${entries.length == 1 ? '' : 'S'} • ${formatGroupedNumber(entries.fold<double>(0, (sum, e) => sum + e.totalCFT))} cft',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: _accentColor,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        formatPkrCurrency(
-                          entries.fold<double>(0, (sum, e) => sum + e.amount),
-                        ),
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: _accentColor,
-                        ),
-                      ),
-                    ],
+      body: entries == null
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: DateRangeBar(
+                    from: _from,
+                    to: _to,
+                    onChanged: (v) => setState(() {
+                      _from = v.$1;
+                      _to = v.$2;
+                    }),
                   ),
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'MONTHLY BREAKDOWN',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                for (final m in monthlyTotals(entries))
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    elevation: 1.5,
-                    shadowColor: Colors.black.withValues(alpha: 0.08),
-                    child: ListTile(
-                      title: Text(
-                        formatMonthLabel(m.monthKey),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        '${m.count} entries • ${formatGroupedNumber(m.totalCft)} cft',
-                      ),
-                      trailing: Text(
-                        formatPkrCurrency(m.totalAmount),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                if (entries.isEmpty)
+                  Expanded(
+                    child: EmptyState(
+                      icon: widget.isPurchase
+                          ? Icons.south_west
+                          : Icons.north_east,
+                      message: 'No $_title entries in this range.',
+                    ),
+                  )
+                else ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _SummaryCard(
+                      title: _title,
+                      entries: entries,
+                      color: _accentColor,
                     ),
                   ),
+                  Expanded(
+                    child: _EntryList(
+                      entries: entries,
+                      isPurchase: widget.isPurchase,
+                    ),
+                  ),
+                ],
               ],
-            ],
-          );
-        },
+            ),
+    );
+  }
+}
+
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.title,
+    required this.entries,
+    required this.color,
+  });
+  final String title;
+  final List<Entry> entries;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final totalCft = entries.fold<double>(0, (sum, e) => sum + e.totalCFT);
+    final totalAmount = entries.fold<double>(0, (sum, e) => sum + e.amount);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(AppRadii.card),
       ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '${entries.length} ${title.toUpperCase()}${entries.length == 1 ? '' : 'S'} • ${formatGroupedNumber(totalCft)} cft',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+          ),
+          Text(
+            formatPkrCurrency(totalAmount),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Every entry, with a header above each month. Flattened into one lazily
+/// built list so hundreds of entries stay smooth.
+class _EntryList extends StatelessWidget {
+  const _EntryList({required this.entries, required this.isPurchase});
+  final List<Entry> entries;
+  final bool isPurchase;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Object>[
+      for (final g in groupEntriesByMonth(entries)) ...[g, ...g.entries],
+    ];
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      itemCount: rows.length,
+      itemBuilder: (context, i) {
+        final row = rows[i];
+        if (row is MonthGroup) {
+          return MonthHeader(
+            title: formatMonthLabel(row.total.monthKey),
+            detail:
+                '${row.total.count} ${row.total.count == 1 ? 'entry' : 'entries'} • ${formatGroupedNumber(row.total.totalCft)} cft',
+            trailing: formatPkrCurrency(row.total.totalAmount),
+          );
+        }
+        return VoucherTile(entry: row as Entry, isPurchase: isPurchase);
+      },
     );
   }
 }

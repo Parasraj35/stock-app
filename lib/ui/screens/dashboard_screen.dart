@@ -11,12 +11,11 @@ import '../../data/data_bus.dart';
 import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/metric_cards.dart';
-import '../widgets/profile_avatar.dart';
+import '../widgets/profile_header_button.dart';
 import '../widgets/trend_chart.dart';
 import 'brands_screen.dart';
 import 'entry_form_screen.dart';
 import 'parties_screen.dart';
-import 'settings_screen.dart';
 import 'stock_screen.dart';
 
 class _Totals {
@@ -83,8 +82,13 @@ Future<_Totals> _loadTotals({int trendDays = 7}) async {
     totalSaleAmount: totalSaleAmount,
     totalCFTPurchased: totalCFTPurchased,
     totalCFTSold: totalCFTSold,
-    profit: calcRealizedProfit(sales, brands),
-    profitTrend: dailyRealizedProfitSeries(sales, brands, days: trendDays),
+    profit: calcRealizedProfit(sales, purchases, brands),
+    profitTrend: dailyRealizedProfitSeries(
+      sales,
+      purchases,
+      brands,
+      days: trendDays,
+    ),
     purchaseChangePercent: monthOverMonthChangePercent(purchases),
     saleChangePercent: monthOverMonthChangePercent(sales),
     brands: brands,
@@ -218,7 +222,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                   ),
-                  const _ProfileHeaderButton(),
+                  const ProfileHeaderButton(),
                 ],
               ),
             ),
@@ -413,61 +417,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     if (choice == null || !context.mounted) return;
 
-    final results = await Future.wait([
-      Repos.instance.brands.list(),
-      Repos.instance.parties.list(),
-    ]);
-    if (!context.mounted) return;
     final isPurchase = choice == 'purchase';
-    Navigator.push(
+    await openEntryForm(
       context,
-      MaterialPageRoute(
-        builder: (context) => EntryFormScreen(
-          title: isPurchase ? 'Purchase' : 'Sale',
-          repository: isPurchase
-              ? Repos.instance.purchases
-              : Repos.instance.sales,
-          brands: results[0] as List<Brand>,
-          parties: results[1] as List<Party>,
-        ),
-      ),
-    );
-    if (context.mounted) await _refresh();
-  }
-}
-
-/// Header profile button — shows the account's photo (once uploaded via
-/// Profile) instead of a plain icon, and refreshes whenever it changes.
-class _ProfileHeaderButton extends StatelessWidget {
-  const _ProfileHeaderButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: DataBus.instance,
-      builder: (context, _) {
-        return FutureBuilder<AppUser?>(
-          future: Repos.instance.users.getUser(),
-          builder: (context, snapshot) {
-            return InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SettingsScreen()),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: ProfileAvatar(
-                  path: snapshot.data?.profilePicPath,
-                  size: 36,
-                  iconColor: Colors.white,
-                  backgroundColor: Colors.white.withValues(alpha: 0.18),
-                ),
-              ),
-            );
-          },
-        );
-      },
+      title: isPurchase ? 'Purchase' : 'Sale',
+      repository: isPurchase ? Repos.instance.purchases : Repos.instance.sales,
     );
   }
 }

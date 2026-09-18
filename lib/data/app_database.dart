@@ -8,12 +8,44 @@ import 'package:sqflite/sqflite.dart';
 const purchasesTable = 'purchases';
 const salesTable = 'sales';
 const partiesTable = 'parties';
+const vehiclesTable = 'vehicles';
 
 const _partiesSchema = '''
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     phone TEXT
 ''';
+
+const _vehiclesSchema = '''
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vehicleNo TEXT NOT NULL,
+    cft REAL NOT NULL
+''';
+
+// The fixed fleet and what each carries per trip. Seeded once — when the app
+// is first installed or upgraded to a version that has vehicles — after which
+// the list belongs to the user (add/edit/delete in the Vehicles screen).
+const _defaultVehicles = <(String, double)>[
+  ('TLM-954', 980),
+  ('TAB-107', 1050),
+  ('TKE-994', 940),
+  ('TKU-327', 910),
+  ('TAP-213', 1040),
+  ('TAJ-439', 1000),
+  ('TKY-300', 539),
+  ('TKG-116', 620),
+  ('TKN-630', 586),
+  ('TKE-927', 610),
+  ('TKV-785', 510),
+  ('TKJ-577', 959),
+];
+
+Future<void> _createAndSeedVehicles(Database db) async {
+  await db.execute('CREATE TABLE $vehiclesTable ($_vehiclesSchema)');
+  for (final (vehicleNo, cft) in _defaultVehicles) {
+    await db.insert(vehiclesTable, {'vehicleNo': vehicleNo, 'cft': cft});
+  }
+}
 
 const _entryColumns = '''
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,7 +72,7 @@ class AppDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'stock.db');
     final db = await openDatabase(
       dbPath,
-      version: 7,
+      version: 8,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -67,6 +99,7 @@ class AppDatabase {
         await db.execute('CREATE TABLE $purchasesTable ($_entryColumns)');
         await db.execute('CREATE TABLE $salesTable ($_entryColumns)');
         await db.execute('CREATE TABLE $partiesTable ($_partiesSchema)');
+        await _createAndSeedVehicles(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -108,6 +141,9 @@ class AppDatabase {
           await db.execute(
             'ALTER TABLE users ADD COLUMN profilePicPath TEXT',
           );
+        }
+        if (oldVersion < 8) {
+          await _createAndSeedVehicles(db);
         }
       },
     );

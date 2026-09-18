@@ -7,6 +7,9 @@ import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/brand_icon.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/list_summary.dart';
+import '../widgets/profile_header_button.dart';
+import 'brand_form_screen.dart';
 
 class BrandsScreen extends StatelessWidget {
   const BrandsScreen({super.key});
@@ -16,14 +19,14 @@ class BrandsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Brands'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (_) => _openBrandForm(context),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'add', child: Text('ADD BRAND')),
-            ],
-          ),
-        ],
+        actions: const [ProfileHeaderButton(), SizedBox(width: 8)],
+      ),
+      // No hero tag: this screen exists both as a tab and when pushed from
+      // the Dashboard, so a shared tag would make the two FABs collide.
+      floatingActionButton: FloatingActionButton(
+        heroTag: null,
+        onPressed: () => _openBrandForm(context),
+        child: const Icon(Icons.add),
       ),
       body: AnimatedBuilder(
         animation: DataBus.instance,
@@ -38,7 +41,7 @@ class BrandsScreen extends StatelessWidget {
               if (brands.isEmpty) {
                 return const EmptyState(
                   icon: Icons.local_offer_outlined,
-                  message: 'No brands yet.\nUse the menu to add one.',
+                  message: 'No brands yet.\nTap + to add one.',
                 );
               }
               final avgMargin =
@@ -48,67 +51,15 @@ class BrandsScreen extends StatelessWidget {
                   brands.length;
               return Column(
                 children: [
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: MetricPalette.profit.highlightBg,
-                      borderRadius: BorderRadius.circular(AppRadii.card),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: MetricPalette.profit.highlightText
-                                .withValues(alpha: 0.14),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.local_offer_outlined,
-                            color: MetricPalette.profit.highlightText,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            '${brands.length} BRAND${brands.length == 1 ? '' : 'S'} LISTED',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
-                              color: MetricPalette.profit.highlightText
-                                  .withValues(alpha: 0.75),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 32,
-                          margin: const EdgeInsets.symmetric(horizontal: 12),
-                          color: MetricPalette.profit.highlightText.withValues(
-                            alpha: 0.2,
-                          ),
-                        ),
-                        Text(
-                          'Avg margin ${formatPkrCurrency(avgMargin)}/cft',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: MetricPalette.profit.highlightText,
-                          ),
-                        ),
-                      ],
-                    ),
+                  SummaryBanner(
+                    icon: Icons.local_offer_outlined,
+                    label:
+                        '${brands.length} BRAND${brands.length == 1 ? '' : 'S'} LISTED',
+                    trailing: 'Avg margin ${formatPkrCurrency(avgMargin)}/cft',
                   ),
                   Expanded(
                     child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 88),
                       itemCount: brands.length,
                       itemBuilder: (context, i) => _BrandCard(
                         brand: brands[i],
@@ -127,9 +78,11 @@ class BrandsScreen extends StatelessWidget {
   }
 
   Future<void> _openBrandForm(BuildContext context, {Brand? existing}) {
-    return showDialog(
-      context: context,
-      builder: (context) => _BrandFormDialog(existing: existing),
+    return Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BrandFormScreen(existing: existing),
+      ),
     );
   }
 }
@@ -225,154 +178,6 @@ class _BrandCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _BrandFormDialog extends StatefulWidget {
-  const _BrandFormDialog({this.existing});
-  final Brand? existing;
-
-  @override
-  State<_BrandFormDialog> createState() => _BrandFormDialogState();
-}
-
-class _BrandFormDialogState extends State<_BrandFormDialog> {
-  final _formKey = GlobalKey<FormState>();
-  late final _name = TextEditingController(text: widget.existing?.name ?? '');
-  late final _purchaseRate = TextEditingController(
-    text: widget.existing != null
-        ? _trimZeros(widget.existing!.purchaseRate)
-        : '',
-  );
-  late final _saleRate = TextEditingController(
-    text: widget.existing != null ? _trimZeros(widget.existing!.saleRate) : '',
-  );
-  bool _submitting = false;
-
-  static String _trimZeros(double v) =>
-      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toString();
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _purchaseRate.dispose();
-    _saleRate.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _submitting = true);
-    final name = _name.text.trim();
-    final purchaseRate = double.parse(_purchaseRate.text.trim());
-    final saleRate = double.parse(_saleRate.text.trim());
-    if (widget.existing == null) {
-      await Repos.instance.brands.add(
-        Brand(name: name, purchaseRate: purchaseRate, saleRate: saleRate),
-      );
-    } else {
-      await Repos.instance.brands.update(
-        widget.existing!.copyWith(
-          name: name,
-          purchaseRate: purchaseRate,
-          saleRate: saleRate,
-        ),
-      );
-    }
-    if (mounted) Navigator.pop(context);
-  }
-
-  Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete brand?'),
-        content: Text(
-          'Delete "${widget.existing!.name}"? This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('CANCEL'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('DELETE', style: TextStyle(color: AppColors.negative)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      await Repos.instance.brands.delete(widget.existing!.id!);
-      if (mounted) Navigator.pop(context);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isEdit = widget.existing != null;
-    return AlertDialog(
-      title: Text(isEdit ? 'Edit brand' : 'Add brand'),
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextFormField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'NAME'),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Required' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _purchaseRate,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'PURCHASE RATE PER CFT (RS)',
-              ),
-              validator: (v) {
-                final n = double.tryParse(v?.trim() ?? '');
-                if (n == null || n <= 0) return 'Enter a valid rate';
-                return null;
-              },
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _saleRate,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'SALE RATE PER CFT (RS)',
-              ),
-              validator: (v) {
-                final n = double.tryParse(v?.trim() ?? '');
-                if (n == null || n <= 0) return 'Enter a valid rate';
-                return null;
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (isEdit)
-          TextButton(
-            onPressed: _submitting ? null : _delete,
-            child: Text('DELETE', style: TextStyle(color: AppColors.negative)),
-          ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('CANCEL'),
-        ),
-        FilledButton(
-          onPressed: _submitting ? null : _submit,
-          child: const Text('SAVE'),
-        ),
-      ],
     );
   }
 }

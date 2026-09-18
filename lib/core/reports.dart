@@ -1,6 +1,7 @@
 // Framework-free reporting helpers — group entries by month for the
 // "monthly purchase/sale" view and PDF exports. No Flutter/pdf imports.
 import 'models.dart';
+import 'vehicles.dart';
 
 class MonthlyTotal {
   final String monthKey; // 'yyyy-MM'
@@ -37,6 +38,33 @@ List<MonthlyTotal> monthlyTotals(List<Entry> entries) {
   return result;
 }
 
+int _newestFirst(Entry a, Entry b) {
+  final byDate = b.date.compareTo(a.date);
+  return byDate != 0 ? byDate : (b.id ?? 0).compareTo(a.id ?? 0);
+}
+
+/// One calendar month's entries (newest first) with that month's totals —
+/// the building block for listing every entry month by month.
+class MonthGroup {
+  final MonthlyTotal total;
+  final List<Entry> entries;
+  const MonthGroup(this.total, this.entries);
+}
+
+/// Every entry, grouped by calendar month, most recent month first, newest
+/// entry first within each month.
+List<MonthGroup> groupEntriesByMonth(List<Entry> entries) {
+  final sorted = [...entries]..sort(_newestFirst);
+  final byMonth = <String, List<Entry>>{};
+  for (final e in sorted) {
+    byMonth.putIfAbsent(e.date.substring(0, 7), () => []).add(e);
+  }
+  return [
+    for (final list in byMonth.values)
+      MonthGroup(monthlyTotals(list).single, list),
+  ];
+}
+
 /// One line of a party's ledger — [isPurchase] disambiguates it since
 /// purchase/sale ids are independent autoincrement sequences and can
 /// collide, so the source table can't be inferred from the entry alone.
@@ -44,6 +72,13 @@ class PartyLedgerEntry {
   final Entry entry;
   final bool isPurchase;
   const PartyLedgerEntry(this.entry, this.isPurchase);
+}
+
+int _ledgerNewestFirst(PartyLedgerEntry a, PartyLedgerEntry b) {
+  final byEntry = _newestFirst(a.entry, b.entry);
+  if (byEntry != 0) return byEntry;
+  // Same day and id: keep a stable order, sales above purchases.
+  return a.isPurchase == b.isPurchase ? 0 : (a.isPurchase ? 1 : -1);
 }
 
 /// Combined chronological history (newest first) of both purchase and sale
@@ -59,7 +94,7 @@ List<PartyLedgerEntry> partyHistory(
     for (final e in sales.where((e) => e.party == partyName))
       PartyLedgerEntry(e, false),
   ];
-  combined.sort((a, b) => b.entry.date.compareTo(a.entry.date));
+  combined.sort(_ledgerNewestFirst);
   return combined;
 }
 
@@ -83,43 +118,90 @@ List<Entry> filterByDateRange(List<Entry> entries, DateRange range) {
   }).toList();
 }
 
-/// One month's purchase + sale totals side by side, with the net profit —
-/// the "merged" report combining both entry types into a single table.
-class MergedMonthlyTotal {
-  final String monthKey;
-  final double purchaseCft;
+/// One month of the combined Purchase & Sale report: every purchase and
+/// sale line (newest first) plus that month's purchase/sale totals and net.
+class LedgerMonthGroup {
+  final String monthKey; // 'yyyy-MM'
   final double purchaseAmount;
-  final double saleCft;
   final double saleAmount;
-  const MergedMonthlyTotal({
+  final List<PartyLedgerEntry> lines;
+  const LedgerMonthGroup({
     required this.monthKey,
-    required this.purchaseCft,
     required this.purchaseAmount,
-    required this.saleCft,
     required this.saleAmount,
+    required this.lines,
   });
 
   double get profit => saleAmount - purchaseAmount;
 }
 
-List<MergedMonthlyTotal> mergedMonthlyTotals(
+/// Purchases and sales merged into one newest-first list, grouped by month.
+List<LedgerMonthGroup> groupLedgerByMonth(
   List<Entry> purchases,
   List<Entry> sales,
 ) {
-  final purchaseByMonth = {
-    for (final m in monthlyTotals(purchases)) m.monthKey: m,
-  };
-  final saleByMonth = {for (final m in monthlyTotals(sales)) m.monthKey: m};
-  final allKeys = {...purchaseByMonth.keys, ...saleByMonth.keys}.toList()
-    ..sort((a, b) => b.compareTo(a));
+  final combined = [
+    for (final e in purchases) PartyLedgerEntry(e, true),
+    for (final e in sales) PartyLedgerEntry(e, false),
+  ]..sort(_ledgerNewestFirst);
+  final byMonth = <String, List<PartyLedgerEntry>>{};
+  for (final line in combined) {
+    byMonth.putIfAbsent(line.entry.date.substring(0, 7), () => []).add(line);
+  }
   return [
-    for (final key in allKeys)
-      MergedMonthlyTotal(
-        monthKey: key,
-        purchaseCft: purchaseByMonth[key]?.totalCft ?? 0,
-        purchaseAmount: purchaseByMonth[key]?.totalAmount ?? 0,
-        saleCft: saleByMonth[key]?.totalCft ?? 0,
-        saleAmount: saleByMonth[key]?.totalAmount ?? 0,
+    for (final month in byMonth.entries)
+      LedgerMonthGroup(
+        monthKey: month.key,
+        purchaseAmount: month.value
+            .where((l) => l.isPurchase)
+            .fold<double>(0, (sum, l) => sum + l.entry.amount),
+        saleAmount: month.value
+            .where((l) => !l.isPurchase)
+            .fold<double>(0, (sum, l) => sum + l.entry.amount),
+        lines: month.value,
       ),
+  ];
+}
+
+/// Every purchase and sale that used one vehicle (newest first) with that
+/// vehicle's totals — one section of the vehicle report. A null
+/// [vehicleNo] holds the entries recorded without a vehicle.
+class VehicleGroup {
+  final String? vehicleNo;
+  final List<PartyLedgerEntry> lines;
+  const VehicleGroup(this.vehicleNo, this.lines);
+
+  double _sum(
+    bool Function(PartyLedgerEntry) test,
+    double Function(Entry) of,
+  ) => lines.where(test).fold<double>(0, (sum, l) => sum + of(l.entry));
+
+  /// Trips made — each entry is `round` trips of `cftPerVehicle`.
+  double get rounds => _sum((l) => true, (e) => e.round);
+  double get totalCft => _sum((l) => true, (e) => e.totalCFT);
+  double get purchaseAmount => _sum((l) => l.isPurchase, (e) => e.amount);
+  double get saleAmount => _sum((l) => !l.isPurchase, (e) => e.amount);
+}
+
+/// Purchases and sales grouped by vehicle number: vehicles A–Z, entries with
+/// no vehicle last. Numbers are compared trimmed and upper-case.
+List<VehicleGroup> groupLedgerByVehicle(
+  List<Entry> purchases,
+  List<Entry> sales,
+) {
+  final combined = [
+    for (final e in purchases) PartyLedgerEntry(e, true),
+    for (final e in sales) PartyLedgerEntry(e, false),
+  ]..sort(_ledgerNewestFirst);
+  final byVehicle = <String?, List<PartyLedgerEntry>>{};
+  for (final line in combined) {
+    byVehicle
+        .putIfAbsent(normalizeVehicleNo(line.entry.vehicleNo), () => [])
+        .add(line);
+  }
+  final numbers = byVehicle.keys.whereType<String>().toList()..sort();
+  return [
+    for (final n in numbers) VehicleGroup(n, byVehicle[n]!),
+    if (byVehicle.containsKey(null)) VehicleGroup(null, byVehicle[null]!),
   ];
 }

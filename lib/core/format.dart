@@ -27,6 +27,16 @@ String formatGroupedNumber(num value) {
 /// Formats a PKR amount, e.g. 384200 -> "Rs 3,84,200".
 String formatPkrCurrency(num value) => 'Rs ${formatGroupedNumber(value)}';
 
+/// Up to two decimals with trailing zeros dropped, ungrouped — for rates and
+/// per-vehicle quantities where whole-number rounding would hide a real
+/// value (35 -> "35", 32.5 -> "32.5").
+String formatDecimal(num value) {
+  final rounded = double.parse(value.toStringAsFixed(2));
+  return rounded == rounded.roundToDouble()
+      ? rounded.toStringAsFixed(0)
+      : rounded.toString();
+}
+
 /// yyyy-MM-dd, the format Entry.date is stored/compared as.
 String formatDateIso(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
