@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:stock/core/models.dart';
 import 'package:stock/core/reports.dart';
+import 'package:stock/core/statement.dart';
 import 'package:stock/data/pdf_export.dart';
 
 Entry _entry(int i, {String party = 'Some Long Party Name Pvt Ltd'}) {
@@ -51,14 +52,71 @@ void main() {
   });
 
   test('party statement builds with full rows', () async {
+    final statement = buildPartyStatement(
+      partyName: 'Some Long Party Name Pvt Ltd',
+      purchases: [for (var i = 0; i < 40; i++) _entry(i)],
+      sales: [for (var i = 40; i < 80; i++) _entry(i)],
+      money: [
+        for (var i = 0; i < 30; i++)
+          MoneyEntry(
+            id: i,
+            date: '2026-05-${(i % 27 + 1).toString().padLeft(2, '0')}',
+            party: 'some long party name pvt ltd',
+            amount: 1000.0 + i,
+            type: i.isEven ? MoneyType.debit : MoneyType.credit,
+          ),
+      ],
+    );
+    expect(statement.lines, hasLength(110));
     final bytes = await buildPartyStatementPdf(
       partyName: 'Some Long Party Name Pvt Ltd',
       businessName: 'Test Traders',
-      purchases: [for (var i = 0; i < 40; i++) _entry(i)],
-      sales: [for (var i = 40; i < 80; i++) _entry(i)],
+      statement: statement,
+      filters: 'All dates',
     );
     expect(_isPdf(bytes), isTrue);
   });
+
+  test(
+    'party statement builds with a balance brought forward, and empty',
+    () async {
+      final statement = buildPartyStatement(
+        partyName: 'Some Long Party Name Pvt Ltd',
+        purchases: [for (var i = 0; i < 40; i++) _entry(i)],
+        sales: [for (var i = 40; i < 80; i++) _entry(i)],
+        money: const [],
+        range: DateRange(from: DateTime(2026, 6, 1)),
+      );
+      expect(statement.showsOpening, isTrue);
+      expect(
+        _isPdf(
+          await buildPartyStatementPdf(
+            partyName: 'Some Long Party Name Pvt Ltd',
+            businessName: null,
+            statement: statement,
+            filters: '2026-06-01 to today',
+          ),
+        ),
+        isTrue,
+      );
+      final empty = buildPartyStatement(
+        partyName: 'Nobody',
+        purchases: const [],
+        sales: const [],
+        money: const [],
+      );
+      expect(
+        _isPdf(
+          await buildPartyStatementPdf(
+            partyName: 'Nobody',
+            businessName: null,
+            statement: empty,
+          ),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('vehicle report builds for all vehicles and for one', () async {
     Entry withVehicle(int i, String? vehicleNo) => Entry(
@@ -104,6 +162,68 @@ void main() {
     );
     expect(_isPdf(one), isTrue);
   });
+
+  test(
+    'vehicle report builds with Debit and Credit, and money-only vehicles',
+    () async {
+      final trips = [
+        for (var i = 0; i < 60; i++)
+          Entry(
+            id: i,
+            date: '2026-03-${(i % 27 + 1).toString().padLeft(2, '0')}',
+            party: 'Some Long Party Name Pvt Ltd',
+            brandId: 1,
+            brandName: 'Retti (Silica) Fine Grade',
+            cftPerVehicle: 980,
+            round: 2,
+            vehicleNo: 'TLM-954',
+            totalCFT: 1960,
+            amount: 1960 * 32.5,
+          ),
+      ];
+      final money = [
+        for (var i = 0; i < 40; i++)
+          MoneyEntry(
+            id: i,
+            date: '2026-03-${(i % 27 + 1).toString().padLeft(2, '0')}',
+            vehicleNo: i % 4 == 0
+                ? 'TKE-994'
+                : 'TLM-954', // TKE-994 has no trips
+            amount: 1000.0 + i,
+            type: i.isEven ? MoneyType.debit : MoneyType.credit,
+          ),
+      ];
+      final groups = groupLedgerByVehicle(trips, const [], money);
+      expect(groups.map((g) => g.vehicleNo), ['TKE-994', 'TLM-954']);
+      for (final showType in [true, false]) {
+        expect(
+          _isPdf(
+            await buildVehicleReportPdf(
+              businessName: 'Test Traders',
+              title: 'Vehicle Report - All vehicles',
+              filters: 'Purchase, Sale, Debit, Credit | All dates',
+              groups: groups,
+              showType: showType,
+            ),
+          ),
+          isTrue,
+        );
+      }
+      // Only money, no trips at all.
+      expect(
+        _isPdf(
+          await buildVehicleReportPdf(
+            businessName: null,
+            title: 'Vehicle Statement - TKE-994',
+            filters: 'Debit, Credit | All dates',
+            groups: [groups.first],
+            showType: false,
+          ),
+        ),
+        isTrue,
+      );
+    },
+  );
 
   test('reports with no entries still build', () async {
     expect(

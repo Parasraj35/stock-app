@@ -57,7 +57,8 @@ class ReportsScreen extends StatelessWidget {
           SettingsRow(
             icon: Icons.receipt_long_outlined,
             label: 'Party Statement',
-            subtitle: 'Full purchase + sale history for one party',
+            subtitle:
+                'Sales, purchases, debits and credits with a running balance',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => PartyStatementScreen()),
@@ -66,7 +67,7 @@ class ReportsScreen extends StatelessWidget {
           SettingsRow(
             icon: Icons.local_shipping_outlined,
             label: 'Vehicle Report',
-            subtitle: 'Every trip by vehicle, with totals',
+            subtitle: 'Trips, debits and credits by vehicle, with balance',
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => VehicleReportScreen()),

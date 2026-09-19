@@ -65,7 +65,7 @@ List<MonthGroup> groupEntriesByMonth(List<Entry> entries) {
   ];
 }
 
-/// One line of a party's ledger — [isPurchase] disambiguates it since
+/// One purchase or sale line — [isPurchase] disambiguates it since
 /// purchase/sale ids are independent autoincrement sequences and can
 /// collide, so the source table can't be inferred from the entry alone.
 class PartyLedgerEntry {
@@ -79,23 +79,6 @@ int _ledgerNewestFirst(PartyLedgerEntry a, PartyLedgerEntry b) {
   if (byEntry != 0) return byEntry;
   // Same day and id: keep a stable order, sales above purchases.
   return a.isPurchase == b.isPurchase ? 0 : (a.isPurchase ? 1 : -1);
-}
-
-/// Combined chronological history (newest first) of both purchase and sale
-/// entries for one party — the party statement.
-List<PartyLedgerEntry> partyHistory(
-  String partyName,
-  List<Entry> purchases,
-  List<Entry> sales,
-) {
-  final combined = [
-    for (final e in purchases.where((e) => e.party == partyName))
-      PartyLedgerEntry(e, true),
-    for (final e in sales.where((e) => e.party == partyName))
-      PartyLedgerEntry(e, false),
-  ];
-  combined.sort(_ledgerNewestFirst);
-  return combined;
 }
 
 /// An optional inclusive [from]/[to] filter for report exports — either or
@@ -166,13 +149,15 @@ List<LedgerMonthGroup> groupLedgerByMonth(
   ];
 }
 
-/// Every purchase and sale that used one vehicle (newest first) with that
-/// vehicle's totals — one section of the vehicle report. A null
-/// [vehicleNo] holds the entries recorded without a vehicle.
+/// Everything for one vehicle — one section of the vehicle report: every
+/// purchase and sale that used it (newest first, with the trip totals), and
+/// its Debit/Credit entries (newest first, with their balance). A null
+/// [vehicleNo] holds the trips recorded without a vehicle.
 class VehicleGroup {
   final String? vehicleNo;
   final List<PartyLedgerEntry> lines;
-  const VehicleGroup(this.vehicleNo, this.lines);
+  final List<MoneyEntry> money;
+  const VehicleGroup(this.vehicleNo, this.lines, [this.money = const []]);
 
   double _sum(
     bool Function(PartyLedgerEntry) test,
@@ -184,28 +169,60 @@ class VehicleGroup {
   double get totalCft => _sum((l) => true, (e) => e.totalCFT);
   double get purchaseAmount => _sum((l) => l.isPurchase, (e) => e.amount);
   double get saleAmount => _sum((l) => !l.isPurchase, (e) => e.amount);
+
+  double get debit => money.debit;
+  double get credit => money.credit;
+
+  /// Debit minus Credit. Above zero the vehicle owes you (you gave more than
+  /// you got back); below zero you owe it. Trips are goods, not money, so they
+  /// never count here.
+  double get balance => debit - credit;
 }
 
-/// Purchases and sales grouped by vehicle number: vehicles A–Z, entries with
-/// no vehicle last. Numbers are compared trimmed and upper-case.
+/// Purchases, sales and Debit/Credit entries grouped by vehicle number:
+/// vehicles A–Z, entries with no vehicle last. A vehicle with only Debit/Credit
+/// entries (no trips) still gets its section. Numbers are compared trimmed and
+/// upper-case.
 List<VehicleGroup> groupLedgerByVehicle(
   List<Entry> purchases,
-  List<Entry> sales,
-) {
+  List<Entry> sales, [
+  List<MoneyEntry> money = const [],
+]) {
   final combined = [
     for (final e in purchases) PartyLedgerEntry(e, true),
     for (final e in sales) PartyLedgerEntry(e, false),
   ]..sort(_ledgerNewestFirst);
-  final byVehicle = <String?, List<PartyLedgerEntry>>{};
+  final trips = <String?, List<PartyLedgerEntry>>{};
   for (final line in combined) {
-    byVehicle
+    trips
         .putIfAbsent(normalizeVehicleNo(line.entry.vehicleNo), () => [])
         .add(line);
   }
-  final numbers = byVehicle.keys.whereType<String>().toList()..sort();
+  // Only entries for a vehicle (an entry for a party belongs in that party's
+  // statement).
+  final moneyByVehicle = <String?, List<MoneyEntry>>{};
+  for (final m in _sortedNewestFirst(
+    money.where((m) => m.vehicleNo != null),
+    (m) => m.date,
+    (m) => m.id,
+  )) {
+    moneyByVehicle
+        .putIfAbsent(normalizeVehicleNo(m.vehicleNo), () => [])
+        .add(m);
+  }
+  final numbers = {
+    ...trips.keys.whereType<String>(),
+    ...moneyByVehicle.keys.whereType<String>(),
+  }.toList()..sort();
   return [
-    for (final n in numbers) VehicleGroup(n, byVehicle[n]!),
-    if (byVehicle.containsKey(null)) VehicleGroup(null, byVehicle[null]!),
+    for (final n in numbers)
+      VehicleGroup(n, trips[n] ?? const [], moneyByVehicle[n] ?? const []),
+    if (trips.containsKey(null) || moneyByVehicle.containsKey(null))
+      VehicleGroup(
+        null,
+        trips[null] ?? const [],
+        moneyByVehicle[null] ?? const [],
+      ),
   ];
 }
 
@@ -219,6 +236,18 @@ extension MoneyTotals on List<MoneyEntry> {
   ).fold<double>(0, (sum, e) => sum + e.amount);
 }
 
+/// [items] newest first: the latest date first, and on the same day the later
+/// id first.
+List<T> _sortedNewestFirst<T>(
+  Iterable<T> items,
+  String Function(T) dateOf,
+  int? Function(T) idOf,
+) => [...items]
+  ..sort((a, b) {
+    final byDate = dateOf(b).compareTo(dateOf(a));
+    return byDate != 0 ? byDate : (idOf(b) ?? 0).compareTo(idOf(a) ?? 0);
+  });
+
 /// [items] grouped by calendar month (from the ISO date), most recent month
 /// first, newest item first within each month (a later id breaks a same-day
 /// tie).
@@ -227,11 +256,7 @@ Map<String, List<T>> _groupByMonthNewestFirst<T>(
   String Function(T) dateOf,
   int? Function(T) idOf,
 ) {
-  final sorted = [...items]
-    ..sort((a, b) {
-      final byDate = dateOf(b).compareTo(dateOf(a));
-      return byDate != 0 ? byDate : (idOf(b) ?? 0).compareTo(idOf(a) ?? 0);
-    });
+  final sorted = _sortedNewestFirst(items, dateOf, idOf);
   final byMonth = <String, List<T>>{};
   for (final item in sorted) {
     byMonth.putIfAbsent(dateOf(item).substring(0, 7), () => []).add(item);

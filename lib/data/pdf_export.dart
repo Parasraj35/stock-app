@@ -9,6 +9,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../core/format.dart';
 import '../core/models.dart';
 import '../core/reports.dart';
+import '../core/statement.dart';
 
 // MultiPage stops at 20 pages by default and throws past that, which would
 // make a long date range impossible to print — so lift the cap.
@@ -195,25 +196,102 @@ Future<Uint8List> buildEntryReportPdf({
   return doc.save();
 }
 
-/// A single party's full purchase+sale history, every entry in full.
+/// One row of the party statement table, already turned into text. Goods
+/// (sale, purchase) fill every column; money (debit, credit) only the amount.
+class _StatementRow {
+  const _StatementRow({
+    required this.date,
+    required this.type,
+    required this.balance,
+    this.brand = '-',
+    this.vehicle = '-',
+    this.roundCft = '-',
+    this.cft = '-',
+    this.rate = '-',
+    this.amount = '',
+  });
+  final String date;
+  final String type;
+  final String brand;
+  final String vehicle;
+  final String roundCft;
+  final String cft;
+  final String rate;
+  final String amount;
+  final String balance;
+}
+
+/// A party's statement: every sale, purchase, debit and credit in date order
+/// with a running balance, then the totals and the closing balance in words.
+/// With a From date the first row is the balance brought forward.
 Future<Uint8List> buildPartyStatementPdf({
   required String partyName,
   required String? businessName,
-  required List<Entry> purchases,
-  required List<Entry> sales,
+  required PartyStatement statement,
+  String? filters,
 }) async {
-  final history = partyHistory(partyName, purchases, sales);
-  final totalPurchaseAmount = purchases
-      .where((e) => e.party == partyName)
-      .fold<double>(0, (sum, e) => sum + e.amount);
-  final totalSaleAmount = sales
-      .where((e) => e.party == partyName)
-      .fold<double>(0, (sum, e) => sum + e.amount);
-  final cols = _entryCols<PartyLedgerEntry>(
-    (l) => l.entry,
-    typeOf: _purchaseOrSale,
-    showParty: false,
-  );
+  String balanceText(double b) => formatBalance(b, withCurrency: false);
+  String vehicleOf(Entry e) {
+    final v = e.vehicleNo;
+    return (v == null || v.isEmpty) ? '-' : v;
+  }
+
+  final rows = <_StatementRow>[
+    if (statement.showsOpening)
+      _StatementRow(
+        date: '',
+        type: 'Opening',
+        brand: 'Balance brought forward',
+        balance: balanceText(statement.opening),
+      ),
+    for (final l in statement.lines)
+      if (l.trade != null)
+        _StatementRow(
+          date: l.date,
+          type: l.kind.label,
+          brand: l.trade!.brandName,
+          vehicle: vehicleOf(l.trade!),
+          roundCft:
+              '${formatDecimal(l.trade!.round)} x ${formatDecimal(l.trade!.cftPerVehicle)}',
+          cft: formatGroupedNumber(l.trade!.totalCFT),
+          rate: formatDecimal(l.trade!.ratePerCft),
+          amount: formatGroupedNumber(l.amount),
+          balance: balanceText(l.balance),
+        )
+      else
+        _StatementRow(
+          date: l.date,
+          type: l.kind.label,
+          amount: formatGroupedNumber(l.amount),
+          balance: balanceText(l.balance),
+        ),
+  ];
+  final cols = <_Col<_StatementRow>>[
+    _Col('Date', pw.FixedColumnWidth(54), (r) => r.date),
+    _Col('Type', pw.FixedColumnWidth(44), (r) => r.type),
+    _Col('Brand', pw.FlexColumnWidth(1.3), (r) => r.brand),
+    _Col('Vehicle', pw.FlexColumnWidth(1), (r) => r.vehicle),
+    _Col(
+      'Round x CFT',
+      pw.FixedColumnWidth(54),
+      (r) => r.roundCft,
+      numeric: true,
+    ),
+    _Col('CFT', pw.FixedColumnWidth(40), (r) => r.cft, numeric: true),
+    _Col('Rate', pw.FixedColumnWidth(34), (r) => r.rate, numeric: true),
+    _Col(
+      'Amount (Rs)',
+      pw.FixedColumnWidth(58),
+      (r) => r.amount,
+      numeric: true,
+    ),
+    _Col(
+      'Balance (Rs)',
+      pw.FixedColumnWidth(84),
+      (r) => r.balance,
+      numeric: true,
+    ),
+  ];
 
   final doc = pw.Document();
   doc.addPage(
@@ -221,16 +299,44 @@ Future<Uint8List> buildPartyStatementPdf({
       maxPages: _maxPages,
       margin: _pageMargin,
       build: (context) => [
-        _header(businessName, 'Party Statement - $partyName'),
+        _header(businessName, 'Party Statement - $partyName', filters: filters),
         pw.SizedBox(height: 8),
-        _table(cols, history),
+        _table(cols, rows),
         pw.SizedBox(height: 12),
         pw.Divider(),
-        pw.Text('Total purchased: ${formatPkrCurrency(totalPurchaseAmount)}'),
-        pw.Text('Total sold: ${formatPkrCurrency(totalSaleAmount)}'),
-        pw.Text(
-          'Net: ${formatPkrCurrency(totalSaleAmount - totalPurchaseAmount)}',
-          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text('Total sold: ${formatPkrCurrency(statement.sold)}'),
+              pw.Text(
+                'Total purchased: ${formatPkrCurrency(statement.purchased)}',
+              ),
+              pw.Text(
+                'Total debit (money given): ${formatPkrCurrency(statement.debit)}',
+              ),
+              pw.Text(
+                'Total credit (money received): ${formatPkrCurrency(statement.credit)}',
+              ),
+              pw.SizedBox(height: 6),
+              pw.Text(
+                'Closing balance: ${formatBalanceWith(partyName, statement.closing)}',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Sale and Debit raise what the party owes you; Purchase and Credit lower it.',
+                style: const pw.TextStyle(
+                  fontSize: 8,
+                  color: PdfColors.grey700,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     ),
@@ -334,9 +440,10 @@ Future<Uint8List> buildMergedReportPdf({
   return doc.save();
 }
 
-/// Trips by vehicle — one section per vehicle with every purchase/sale on
-/// it and that vehicle's totals, then a grand total. [showType] adds a
-/// Purchase/Sale column when both are included.
+/// Vehicles — one section per vehicle with every purchase/sale (trip) on it
+/// and its totals, then its Debit and Credit entries with their balance, then
+/// a grand total. [showType] adds a Purchase/Sale column when both are
+/// included.
 Future<Uint8List> buildVehicleReportPdf({
   required String? businessName,
   required String title,
@@ -349,15 +456,31 @@ Future<Uint8List> buildVehicleReportPdf({
     typeOf: showType ? _purchaseOrSale : null,
     showVehicle: false,
   );
+  final moneyCols = <_Col<MoneyEntry>>[
+    _Col('Date', pw.FixedColumnWidth(64), (e) => e.date),
+    _Col('Type', pw.FixedColumnWidth(54), (e) => e.type.label),
+    _Col(
+      'Rupees',
+      pw.FlexColumnWidth(1),
+      (e) => formatGroupedNumber(e.amount),
+      numeric: true,
+    ),
+  ];
   final entries = groups.fold<int>(0, (sum, g) => sum + g.lines.length);
   final rounds = groups.fold<double>(0, (sum, g) => sum + g.rounds);
   final totalCft = groups.fold<double>(0, (sum, g) => sum + g.totalCft);
   final purchased = groups.fold<double>(0, (sum, g) => sum + g.purchaseAmount);
   final sold = groups.fold<double>(0, (sum, g) => sum + g.saleAmount);
+  final debit = groups.fold<double>(0, (sum, g) => sum + g.debit);
+  final credit = groups.fold<double>(0, (sum, g) => sum + g.credit);
+  final hasMoney = groups.any((g) => g.money.isNotEmpty);
 
   String amounts(double purchase, double sale) => showType
       ? 'Buy ${formatPkrCurrency(purchase)} | Sell ${formatPkrCurrency(sale)}'
       : formatPkrCurrency(purchase + sale);
+
+  String moneyTotals(double debit, double credit) =>
+      'Debit ${formatPkrCurrency(debit)} | Credit ${formatPkrCurrency(credit)} | Balance: ${formatBalance(debit - credit)}';
 
   final doc = pw.Document();
   doc.addPage(
@@ -370,17 +493,43 @@ Future<Uint8List> buildVehicleReportPdf({
         for (final g in groups) ...[
           _monthHeading(
             g.vehicleNo ?? 'No vehicle',
-            '${g.lines.length} entries | ${formatDecimal(g.rounds)} rounds | ${formatGroupedNumber(g.totalCft)} cft | ${amounts(g.purchaseAmount, g.saleAmount)}',
+            g.lines.isEmpty
+                ? 'No trips'
+                : '${g.lines.length} entries | ${formatDecimal(g.rounds)} rounds | ${formatGroupedNumber(g.totalCft)} cft | ${amounts(g.purchaseAmount, g.saleAmount)}',
           ),
-          _table(cols, g.lines),
+          if (g.lines.isNotEmpty) _table(cols, g.lines),
+          if (g.money.isNotEmpty) ...[
+            _monthHeading('Debit & Credit', moneyTotals(g.debit, g.credit)),
+            _table(moneyCols, g.money),
+          ],
         ],
         pw.SizedBox(height: 12),
         pw.Divider(),
         pw.Align(
           alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            'Grand total: $entries entries | ${formatDecimal(rounds)} rounds | ${formatGroupedNumber(totalCft)} cft | ${amounts(purchased, sold)}',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              if (entries > 0)
+                pw.Text(
+                  'Grand total: $entries entries | ${formatDecimal(rounds)} rounds | ${formatGroupedNumber(totalCft)} cft | ${amounts(purchased, sold)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+              if (hasMoney) ...[
+                pw.Text(
+                  'Debit & Credit total: ${moneyTotals(debit, credit)}',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  'Balance = Debit - Credit. "Owes you" means you gave more than you got back.',
+                  style: const pw.TextStyle(
+                    fontSize: 8,
+                    color: PdfColors.grey700,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],

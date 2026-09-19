@@ -4,17 +4,19 @@ import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
 import '../../core/models.dart';
-import '../../core/reports.dart';
+import '../../core/reports.dart' show DateRange;
+import '../../core/statement.dart';
 import '../../data/pdf_export.dart';
 import '../../data/repos.dart';
-import '../theme/tokens.dart';
 import '../widgets/date_range_bar.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/report_actions.dart';
-import '../widgets/report_widgets.dart';
+import '../widgets/statement_widgets.dart';
 
-/// Pick a party, see every purchase and sale with them (optionally filtered
-/// to a From/To date range), and share or print it as a PDF statement.
+/// Pick a party and see everything with them — sales, purchases, debits and
+/// credits — in date order with a running balance (optionally for a From/To
+/// range, starting from the balance brought forward), and share or print it as
+/// a PDF statement.
 class PartyStatementScreen extends StatefulWidget {
   const PartyStatementScreen({super.key});
 
@@ -23,94 +25,93 @@ class PartyStatementScreen extends StatefulWidget {
 }
 
 class _PartyStatementScreenState extends State<PartyStatementScreen> {
-  List<Party> _parties = [];
-  bool _loadingParties = true;
-  Party? _selected;
-  bool _loadingHistory = false;
-  List<Entry>? _purchases;
-  List<Entry>? _sales;
+  bool _loading = true;
+  List<String> _names = const [];
+  List<Entry> _purchases = const [];
+  List<Entry> _sales = const [];
+  List<MoneyEntry> _money = const [];
+  String? _selected;
   DateTime? _from;
   DateTime? _to;
 
   @override
   void initState() {
     super.initState();
-    _loadParties();
+    _load();
   }
 
-  Future<void> _loadParties() async {
-    final parties = await Repos.instance.parties.list();
-    if (!mounted) return;
-    setState(() {
-      _parties = parties;
-      _loadingParties = false;
-    });
-  }
-
-  Future<void> _selectParty(Party party) async {
-    setState(() {
-      _selected = party;
-      _loadingHistory = true;
-      _purchases = null;
-      _sales = null;
-    });
+  Future<void> _load() async {
     final results = await Future.wait([
+      Repos.instance.parties.list(),
       Repos.instance.purchases.list(),
       Repos.instance.sales.list(),
+      Repos.instance.money.list(),
     ]);
+    final parties = results[0] as List<Party>;
+    final purchases = results[1] as List<Entry>;
+    final sales = results[2] as List<Entry>;
+    final money = results[3] as List<MoneyEntry>;
     if (!mounted) return;
     setState(() {
-      _purchases = results[0];
-      _sales = results[1];
-      _loadingHistory = false;
+      _purchases = purchases;
+      _sales = sales;
+      _money = money;
+      // Saved parties, plus any name that only appears on an entry.
+      _names = partyNames(
+        saved: parties,
+        purchases: purchases,
+        sales: sales,
+        money: money,
+      );
+      _loading = false;
     });
   }
 
-  Future<Uint8List> _buildPdf(
-    Party party,
-    List<Entry> purchases,
-    List<Entry> sales,
-  ) async {
+  String get _periodLabel {
+    if (_from == null && _to == null) return 'All dates';
+    final from = _from == null ? 'start' : formatDateIso(_from!);
+    final to = _to == null ? 'today' : formatDateIso(_to!);
+    return '$from to $to';
+  }
+
+  Future<Uint8List> _buildPdf(String name, PartyStatement statement) async {
     final user = await Repos.instance.users.getUser();
     return buildPartyStatementPdf(
-      partyName: party.name,
+      partyName: name,
       businessName: user?.businessName,
-      purchases: purchases,
-      sales: sales,
+      statement: statement,
+      filters: _periodLabel,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final selected = _selected;
-    final allPurchases = _purchases;
-    final allSales = _sales;
-    List<Entry>? purchases;
-    List<Entry>? sales;
-    List<PartyLedgerEntry>? history;
-    if (selected != null && allPurchases != null && allSales != null) {
-      final range = DateRange(from: _from, to: _to);
-      purchases = filterByDateRange(allPurchases, range);
-      sales = filterByDateRange(allSales, range);
-      history = partyHistory(selected.name, purchases, sales);
-    }
+    final statement = selected == null
+        ? null
+        : buildPartyStatement(
+            partyName: selected,
+            purchases: _purchases,
+            sales: _sales,
+            money: _money,
+            range: DateRange(from: _from, to: _to),
+          );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Party Statement'),
         actions: [
-          if (selected != null)
+          if (selected != null && statement != null)
             ReportActions(
-              enabled: history != null && history.isNotEmpty,
-              filename: pdfFileName('party_statement_${selected.name}'),
-              buildPdf: () =>
-                  _buildPdf(selected, purchases ?? const [], sales ?? const []),
+              enabled: !statement.isEmpty,
+              filename: pdfFileName('party_statement_$selected'),
+              buildPdf: () => _buildPdf(selected, statement),
             ),
         ],
       ),
-      body: _loadingParties
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _parties.isEmpty
+          : _names.isEmpty
           ? const EmptyState(
               icon: Icons.people_outline,
               message:
@@ -120,18 +121,20 @@ class _PartyStatementScreenState extends State<PartyStatementScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: DropdownButtonFormField<Party>(
+                  child: DropdownButtonFormField<String>(
                     initialValue: _selected,
+                    isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'SELECT PARTY',
                     ),
                     items: [
-                      for (final p in _parties)
-                        DropdownMenuItem(value: p, child: Text(p.name)),
+                      for (final n in _names)
+                        DropdownMenuItem(
+                          value: n,
+                          child: Text(n, overflow: TextOverflow.ellipsis),
+                        ),
                     ],
-                    onChanged: (p) {
-                      if (p != null) _selectParty(p);
-                    },
+                    onChanged: (n) => setState(() => _selected = n),
                   ),
                 ),
                 if (selected != null)
@@ -146,103 +149,51 @@ class _PartyStatementScreenState extends State<PartyStatementScreen> {
                       }),
                     ),
                   ),
-                if (_loadingHistory)
-                  const Expanded(
-                    child: Center(child: CircularProgressIndicator()),
+                if (selected != null && statement != null)
+                  Expanded(
+                    child: _StatementList(name: selected, statement: statement),
                   ),
-                if (history != null)
-                  Expanded(child: _HistoryList(history: history)),
               ],
             ),
     );
   }
 }
 
-class _HistoryList extends StatelessWidget {
-  const _HistoryList({required this.history});
-  final List<PartyLedgerEntry> history;
+class _StatementList extends StatelessWidget {
+  const _StatementList({required this.name, required this.statement});
+
+  final String name;
+  final PartyStatement statement;
 
   @override
   Widget build(BuildContext context) {
-    if (history.isEmpty) {
-      return const EmptyState(
+    if (statement.isEmpty) {
+      final carried = statement.showsOpening && statement.opening.round() != 0
+          ? '\nBefore this range: ${formatBalanceWith(name, statement.opening)}.'
+          : '';
+      return EmptyState(
         icon: Icons.receipt_long_outlined,
-        message: 'No entries for this party in this range.',
+        message: 'No entries for this party in this range.$carried',
       );
     }
-    final totalPurchase = history
-        .where((l) => l.isPurchase)
-        .fold<double>(0, (sum, l) => sum + l.entry.amount);
-    final totalSale = history
-        .where((l) => !l.isPurchase)
-        .fold<double>(0, (sum, l) => sum + l.entry.amount);
-    return ListView(
+    // The card, the balance brought forward (if the range starts part-way
+    // through), then every line — built lazily so a long history stays smooth.
+    final head = statement.showsOpening ? 2 : 1;
+    return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppRadii.card),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Purchased',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
-                    Text(
-                      formatPkrCurrency(totalPurchase),
-                      style: TextStyle(
-                        color: AppColors.purchaseColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Sold',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                      ),
-                    ),
-                    Text(
-                      formatPkrCurrency(totalSale),
-                      style: TextStyle(
-                        color: AppColors.saleColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        for (final line in history)
-          VoucherTile(
-            entry: line.entry,
-            isPurchase: line.isPurchase,
-            showType: true,
-            showParty: false,
-          ),
-      ],
+      itemCount: head + statement.lines.length,
+      itemBuilder: (context, i) {
+        if (i == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: BalanceCard(name: name, statement: statement),
+          );
+        }
+        if (statement.showsOpening && i == 1) {
+          return BalanceForwardTile(balance: statement.opening);
+        }
+        return StatementTile(line: statement.lines[i - head]);
+      },
     );
   }
 }

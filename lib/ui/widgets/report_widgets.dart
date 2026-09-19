@@ -218,11 +218,21 @@ Color moneyTypeColor(MoneyType type) =>
 /// One Debit/Credit entry: type badge, party or vehicle, date and rupees. With [onTap]
 /// and [onDelete] it's an editable list row; without them, a report row.
 class MoneyTile extends StatelessWidget {
-  const MoneyTile({super.key, required this.entry, this.onTap, this.onDelete});
+  const MoneyTile({
+    super.key,
+    required this.entry,
+    this.onTap,
+    this.onDelete,
+    this.showTarget = true,
+  });
 
   final MoneyEntry entry;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
+
+  /// Shows whether the entry is for a Party or a Vehicle. Off where the whole
+  /// list is already under one vehicle.
+  final bool showTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -304,25 +314,28 @@ class MoneyTile extends StatelessWidget {
                               fontSize: 12,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Icon(
-                            entry.target == MoneyTarget.vehicle
-                                ? Icons.local_shipping_outlined
-                                : Icons.person_outline,
-                            size: 12,
-                            color: AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              entry.target.label,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
+                          if (showTarget) ...[
+                            const SizedBox(width: 10),
+                            Icon(
+                              entry.target == MoneyTarget.vehicle
+                                  ? Icons.local_shipping_outlined
+                                  : Icons.person_outline,
+                              size: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                entry.target.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
-                          ),
+                          ] else
+                            const Spacer(),
                           if (onDelete != null)
                             CardIconButton(
                               tooltip: 'Delete',

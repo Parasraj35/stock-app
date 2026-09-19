@@ -132,16 +132,6 @@ void main() {
       // Newest first, and purchase/sale kept apart despite the shared id.
       expect(march.lines.map((l) => l.isPurchase), [true, false, true]);
     });
-
-    test('partyHistory returns only that party, newest first', () {
-      final purchases = [
-        _entry(id: 1, date: '2026-01-01', party: 'A', amount: 1),
-        _entry(id: 2, date: '2026-01-03', party: 'B', amount: 2),
-      ];
-      final sales = [_entry(id: 1, date: '2026-01-02', party: 'A', amount: 3)];
-      final history = partyHistory('A', purchases, sales);
-      expect(history.map((l) => l.entry.date), ['2026-01-02', '2026-01-01']);
-    });
   });
 
   group('vehicles', () {
