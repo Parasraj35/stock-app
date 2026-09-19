@@ -7,8 +7,12 @@ import '../theme/tokens.dart';
 /// Add/edit a party on a full screen — same layout as the Purchase and Sale
 /// forms.
 class PartyFormScreen extends StatefulWidget {
-  const PartyFormScreen({super.key, this.existing});
+  const PartyFormScreen({super.key, this.existing, this.initialName});
   final Party? existing;
+
+  /// Pre-fills the name when adding a party — used by the Purchase/Sale form's
+  /// "Add party" button so what was already typed isn't lost.
+  final String? initialName;
 
   @override
   State<PartyFormScreen> createState() => _PartyFormScreenState();
@@ -16,7 +20,9 @@ class PartyFormScreen extends StatefulWidget {
 
 class _PartyFormScreenState extends State<PartyFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  late final _name = TextEditingController(text: widget.existing?.name ?? '');
+  late final _name = TextEditingController(
+    text: widget.existing?.name ?? widget.initialName ?? '',
+  );
   late final _phone = TextEditingController(text: widget.existing?.phone ?? '');
   bool _submitting = false;
 
@@ -33,14 +39,14 @@ class _PartyFormScreenState extends State<PartyFormScreen> {
     final name = _name.text.trim();
     final phone = _phone.text.trim();
     final party = Party(name: name, phone: phone.isEmpty ? null : phone);
+    final Party saved;
     if (widget.existing == null) {
-      await Repos.instance.parties.add(party);
+      saved = await Repos.instance.parties.add(party);
     } else {
-      await Repos.instance.parties.update(
-        party.copyWith(id: widget.existing!.id),
-      );
+      saved = party.copyWith(id: widget.existing!.id);
+      await Repos.instance.parties.update(saved);
     }
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, saved);
   }
 
   @override

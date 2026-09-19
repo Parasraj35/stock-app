@@ -382,6 +382,70 @@ void main() {
     });
   });
 
+  group('editing an existing entry', () {
+    Entry entry({String? vehicleNo}) => Entry(
+      id: 9,
+      date: '2026-09-19',
+      party: 'Ali',
+      brandId: 1,
+      brandName: 'Crush',
+      cftPerVehicle: 100,
+      round: 2,
+      vehicleNo: vehicleNo,
+      totalCFT: 200,
+      amount: 7000,
+    );
+
+    Future<_FakeEntryRepository> editDate(
+      WidgetTester tester,
+      Entry existing,
+    ) async {
+      final repo = _FakeEntryRepository();
+      await _open(
+        tester,
+        EntryFormScreen(
+          title: 'Purchase',
+          repository: repo,
+          brands: const [_crush, _ghera],
+          parties: const [],
+          vehicles: _vehicles,
+          existing: existing,
+        ),
+      );
+      // Change the date to the 1st, exactly as a user would.
+      await tester.tap(find.text('2026-09-19'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CalendarDatePicker),
+          matching: find.text('1'),
+        ),
+      );
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('SAVE PURCHASE'));
+      await tester.pumpAndSettle();
+      return repo;
+    }
+
+    testWidgets('an entry that has a vehicle saves its new date', (
+      tester,
+    ) async {
+      final repo = await editDate(tester, entry(vehicleNo: 'LEA-1'));
+      expect(repo.saved, hasLength(1));
+      expect(repo.saved.single.id, 9);
+      expect(repo.saved.single.date, '2026-09-01');
+    });
+
+    testWidgets('an old entry saved before vehicles existed can still be '
+        'edited', (tester) async {
+      final repo = await editDate(tester, entry());
+      expect(repo.saved, hasLength(1));
+      expect(repo.saved.single.date, '2026-09-01');
+      expect(repo.saved.single.vehicleNo, isNull);
+    });
+  });
+
   group('vehicle form', () {
     testWidgets('rejects a CFT another vehicle already carries', (
       tester,

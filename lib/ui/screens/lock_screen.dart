@@ -7,7 +7,9 @@ import '../theme/tokens.dart';
 import '../widgets/labeled_field.dart';
 
 /// Shown instead of the full phone+password login once a PIN is configured
-/// — on cold start, and again whenever the auto-lock timer trips.
+/// — on cold start, and again whenever the auto-lock timer trips. The screen
+/// stays clean: a way to the password login only appears after several wrong
+/// PINs, for someone who has forgotten theirs.
 class LockScreen extends StatefulWidget {
   const LockScreen({
     super.key,
@@ -24,8 +26,12 @@ class LockScreen extends StatefulWidget {
 }
 
 class _LockScreenState extends State<LockScreen> {
+  /// Wrong PINs before the "log in with password" way out is offered.
+  static const _attemptsBeforeHelp = 5;
+
   final _pin = TextEditingController();
   String? _error;
+  int _wrongAttempts = 0;
 
   @override
   void initState() {
@@ -53,6 +59,7 @@ class _LockScreenState extends State<LockScreen> {
     } else {
       setState(() {
         _error = 'Wrong PIN';
+        _wrongAttempts++;
         _pin.clear();
       });
     }
@@ -128,14 +135,16 @@ class _LockScreenState extends State<LockScreen> {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 20),
-                  TextButton(
-                    onPressed: widget.onUseFullLogin,
-                    child: Text(
-                      'Forgot PIN? Log in with password',
-                      style: TextStyle(color: AppColors.primary),
+                  if (_wrongAttempts >= _attemptsBeforeHelp) ...[
+                    const SizedBox(height: 20),
+                    TextButton(
+                      onPressed: widget.onUseFullLogin,
+                      child: Text(
+                        'Forgot PIN? Log in with password',
+                        style: TextStyle(color: AppColors.primary),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

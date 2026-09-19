@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../data/profile_photo_service.dart';
 import '../../data/repos.dart';
 import '../theme/tokens.dart';
+import '../widgets/logout_button.dart';
 import '../widgets/profile_avatar.dart';
 
 const _genders = ['Male', 'Female', 'Other'];
@@ -279,6 +280,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Text(_saving ? 'SAVING...' : 'SAVE'),
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    LogoutButton(),
                   ],
                 ),
               ),
