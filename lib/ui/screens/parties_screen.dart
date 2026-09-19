@@ -252,25 +252,11 @@ class _PartyCard extends StatelessWidget {
                       color: AppColors.saleColor,
                     ),
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.negative.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: IconButton(
-                      tooltip: 'Delete party',
-                      icon: Icon(
-                        Icons.delete_outline,
-                        color: AppColors.negative,
-                        size: 18,
-                      ),
-                      onPressed: onDelete,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 40,
-                        minHeight: 40,
-                      ),
-                    ),
+                  CardIconButton(
+                    tooltip: 'Delete party',
+                    icon: Icons.delete_outline,
+                    color: AppColors.negative,
+                    onPressed: onDelete,
                   ),
                 ],
               ),

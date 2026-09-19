@@ -7,7 +7,19 @@ import 'package:stock/core/models.dart';
 import 'package:stock/data/repos.dart';
 import 'package:stock/data/repositories.dart';
 import 'package:stock/ui/screens/entry_form_screen.dart';
+import 'package:stock/ui/screens/money_form_screen.dart';
 import 'package:stock/ui/theme/tokens.dart';
+
+class _NoopMoneyRepository implements MoneyRepository {
+  @override
+  Future<MoneyEntry> add(MoneyEntry entry) async => entry;
+  @override
+  Future<void> update(MoneyEntry entry) async {}
+  @override
+  Future<void> delete(int id) async {}
+  @override
+  Future<List<MoneyEntry>> list() async => const [];
+}
 
 class _NoopEntryRepository implements EntryRepository {
   @override
@@ -148,5 +160,54 @@ void main() {
     expect(_addButton, findsNothing);
     final stored = await tester.runAsync(() => Repos.instance.parties.list());
     expect(stored!.map((p) => p.name), contains('Zubair'));
+  });
+
+  testWidgets('on Debit/Credit, a party added on the spot is still known after '
+      'flipping to Vehicle and back', (tester) async {
+    tester.view.physicalSize = const Size(360, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(),
+        home: MoneyFormScreen(
+          repository: _NoopMoneyRepository(),
+          parties: const [ali],
+          vehicles: const [],
+        ),
+      ),
+    );
+    await _typeParty(tester, 'Kamran');
+    await tester.tap(_addButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SAVE PARTY'));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 600)),
+    );
+    await tester.pumpAndSettle();
+    expect(_addButton, findsNothing); // saved and selected
+
+    Future<void> chooseWho(String side) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('moneyTarget')),
+          matching: find.text(side),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await chooseWho('Vehicle');
+    await chooseWho('Party');
+    // The party field was rebuilt: it still holds the name, and still knows it
+    // is a saved party (so it doesn't offer to add it a second time).
+    expect(
+      tester
+          .widget<TextFormField>(find.widgetWithText(TextFormField, 'PARTY'))
+          .controller!
+          .text,
+      'Kamran',
+    );
+    expect(_addButton, findsNothing);
   });
 }

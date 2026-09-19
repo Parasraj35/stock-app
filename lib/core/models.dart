@@ -91,6 +91,148 @@ class Vehicle {
   );
 }
 
+/// Which way money moved.
+enum MoneyType {
+  debit,
+  credit;
+
+  String get label => this == debit ? 'Debit' : 'Credit';
+}
+
+/// Who a Debit/Credit entry is for — chosen by the user for each entry.
+enum MoneyTarget {
+  party,
+  vehicle;
+
+  String get label => this == party ? 'Party' : 'Vehicle';
+}
+
+/// A Debit or Credit entry — money, no goods. Each entry is for either a party
+/// or a vehicle (exactly one of [party] / [vehicleNo] is set). Both types share
+/// the same fields (date, who, rupees); [type] tells them apart. Kept apart
+/// from Purchase/Sale, so it never touches stock, totals or profit.
+class MoneyEntry {
+  final int? id;
+  final String date; // ISO yyyy-MM-dd
+  final String? party;
+  final String? vehicleNo;
+  final double amount;
+  final MoneyType type;
+
+  const MoneyEntry({
+    this.id,
+    required this.date,
+    this.party,
+    this.vehicleNo,
+    required this.amount,
+    required this.type,
+  }) : assert(
+         (party == null) != (vehicleNo == null),
+         'An entry is for a party or a vehicle: exactly one',
+       );
+
+  MoneyTarget get target =>
+      vehicleNo != null ? MoneyTarget.vehicle : MoneyTarget.party;
+
+  /// The party name or vehicle number this entry is for.
+  String get name => (vehicleNo ?? party)!;
+
+  /// Passing [party] makes it a party entry; passing [vehicleNo] makes it a
+  /// vehicle entry (the other is cleared). Passing neither keeps who it is for.
+  MoneyEntry copyWith({
+    int? id,
+    String? date,
+    String? party,
+    String? vehicleNo,
+    double? amount,
+    MoneyType? type,
+  }) {
+    final changesTarget = party != null || vehicleNo != null;
+    return MoneyEntry(
+      id: id ?? this.id,
+      date: date ?? this.date,
+      party: changesTarget ? party : this.party,
+      vehicleNo: changesTarget ? vehicleNo : this.vehicleNo,
+      amount: amount ?? this.amount,
+      type: type ?? this.type,
+    );
+  }
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'date': date,
+    'party': party,
+    'vehicleNo': vehicleNo,
+    'amount': amount,
+    'type': type.name,
+  };
+
+  factory MoneyEntry.fromMap(Map<String, Object?> map) => MoneyEntry(
+    id: map['id'] as int?,
+    date: map['date'] as String,
+    party: map['party'] as String?,
+    vehicleNo: map['vehicleNo'] as String?,
+    amount: (map['amount'] as num).toDouble(),
+    type: MoneyType.values.byName(map['type'] as String),
+  );
+}
+
+/// One diesel fill-up for a vehicle: [litres] at [price] rupees a litre. The
+/// total is litres × price, worked out when needed and never stored. Kept
+/// apart from Purchase/Sale, so it never touches stock, totals or profit.
+class DieselEntry {
+  final int? id;
+  final String date; // ISO yyyy-MM-dd
+  final String vehicleNo;
+  final double litres;
+  final double price; // rupees per litre
+
+  const DieselEntry({
+    this.id,
+    required this.date,
+    required this.vehicleNo,
+    required this.litres,
+    required this.price,
+  });
+
+  /// What [litres] at [price] come to, in whole rupees. Rounded per entry so a
+  /// report's rows always add up to its grand total.
+  static double totalFor(double litres, double price) =>
+      (litres * price).roundToDouble();
+
+  double get total => totalFor(litres, price);
+
+  DieselEntry copyWith({
+    int? id,
+    String? date,
+    String? vehicleNo,
+    double? litres,
+    double? price,
+  }) => DieselEntry(
+    id: id ?? this.id,
+    date: date ?? this.date,
+    vehicleNo: vehicleNo ?? this.vehicleNo,
+    litres: litres ?? this.litres,
+    price: price ?? this.price,
+  );
+
+  Map<String, Object?> toMap() => {
+    'id': id,
+    'date': date,
+    'vehicleNo': vehicleNo,
+    'litres': litres,
+    'price': price,
+  };
+
+  factory DieselEntry.fromMap(Map<String, Object?> map) => DieselEntry(
+    id: map['id'] as int?,
+    date: map['date'] as String,
+    vehicleNo: map['vehicleNo'] as String,
+    litres: (map['litres'] as num).toDouble(),
+    price: (map['price'] as num).toDouble(),
+  );
+}
+
 /// Shared shape for both Purchase and Sale entries — same fields, same
 /// calculation rules. Which table it lives in is decided by the repository,
 /// not by this model, so the UI/list/form code can be reused for both.

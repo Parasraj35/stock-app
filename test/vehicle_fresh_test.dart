@@ -24,5 +24,24 @@ void main() {
     // The rest of the schema is created alongside it.
     expect(await db.db.query('brands'), isEmpty);
     expect(await db.db.query('purchases'), isEmpty);
+    // Debit & Credit is for a party or a vehicle, from the first install.
+    final money = await db.db.rawQuery('PRAGMA table_info($moneyTable)');
+    expect(money.map((c) => c['name']), [
+      'id',
+      'date',
+      'party',
+      'vehicleNo',
+      'amount',
+      'type',
+    ]);
+    // …and diesel, with its litres and price.
+    final diesel = await db.db.rawQuery('PRAGMA table_info($dieselTable)');
+    expect(diesel.map((c) => c['name']), [
+      'id',
+      'date',
+      'vehicleNo',
+      'litres',
+      'price',
+    ]);
   });
 }

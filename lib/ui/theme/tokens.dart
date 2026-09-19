@@ -44,6 +44,9 @@ class AppColors {
       _dark ? const Color(0xFF25B89A) : const Color(0xFF128C7E);
   static Color get saleColor =>
       _dark ? const Color(0xFFF08C1A) : const Color(0xFFDC6803);
+  // Diesel: its own blue, distinct from purchase (teal) and sale (orange).
+  static Color get dieselColor =>
+      _dark ? const Color(0xFF64B5F6) : const Color(0xFF1565C0);
 
   // Profit highlight chip (positive).
   static Color get profitPositiveBg =>

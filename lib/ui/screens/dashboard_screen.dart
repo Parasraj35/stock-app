@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/calc.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
+import '../../core/reports.dart' show DieselTotals, MoneyTotals;
 import '../../core/trends.dart'
     show TrendPoint, dailyRealizedProfitSeries, monthOverMonthChangePercent;
 import '../../data/data_bus.dart';
@@ -12,9 +13,14 @@ import '../../data/repos.dart';
 import '../theme/tokens.dart';
 import '../widgets/metric_cards.dart';
 import '../widgets/profile_header_button.dart';
+import '../widgets/report_widgets.dart' show moneyTypeColor;
 import '../widgets/trend_chart.dart';
 import 'brands_screen.dart';
+import 'diesel_form_screen.dart';
+import 'diesel_screen.dart';
 import 'entry_form_screen.dart';
+import 'money_form_screen.dart';
+import 'money_screen.dart';
 import 'parties_screen.dart';
 import 'stock_screen.dart';
 
@@ -31,6 +37,8 @@ class _Totals {
   final double? saleChangePercent;
   final List<Brand> brands;
   final List<Party> parties;
+  final List<MoneyEntry> money;
+  final List<DieselEntry> diesel;
 
   const _Totals({
     required this.totalBrands,
@@ -45,6 +53,8 @@ class _Totals {
     required this.saleChangePercent,
     required this.brands,
     required this.parties,
+    required this.money,
+    required this.diesel,
   });
 
   double get stockCft => calcStock(totalCFTPurchased, totalCFTSold);
@@ -58,11 +68,15 @@ Future<_Totals> _loadTotals({int trendDays = 7}) async {
     Repos.instance.purchases.list(),
     Repos.instance.sales.list(),
     Repos.instance.parties.list(),
+    Repos.instance.money.list(),
+    Repos.instance.diesel.list(),
   ]);
   final brands = results[0] as List<Brand>;
   final purchases = results[1] as List<Entry>;
   final sales = results[2] as List<Entry>;
   final parties = results[3] as List<Party>;
+  final money = results[4] as List<MoneyEntry>;
+  final diesel = results[5] as List<DieselEntry>;
 
   final totalPurchaseAmount = purchases.fold<double>(
     0,
@@ -93,6 +107,8 @@ Future<_Totals> _loadTotals({int trendDays = 7}) async {
     saleChangePercent: monthOverMonthChangePercent(sales),
     brands: brands,
     parties: parties,
+    money: money,
+    diesel: diesel,
   );
 }
 
@@ -126,12 +142,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onDataChanged() {
     if (!mounted) return;
-    setState(() => _future = _loadTotals(trendDays: _trendDays));
+    setState(() {
+      _future = _loadTotals(trendDays: _trendDays);
+    });
   }
 
   Future<void> _refresh() async {
     final next = _loadTotals(trendDays: _trendDays);
-    setState(() => _future = next);
+    setState(() {
+      _future = next;
+    });
     await next;
   }
 
@@ -312,66 +332,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ],
                         ),
                         const SizedBox(height: AppSpacing.sectionGap),
-                        Card(
-                          elevation: 1.5,
-                          shadowColor: Colors.black.withValues(alpha: 0.08),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(AppRadii.card),
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => StockScreen(),
-                              ),
+                        _LinkCard(
+                          icon: Icons.inventory_2_outlined,
+                          title: 'Stock Overview',
+                          subtitle:
+                              '${formatGroupedNumber(t.stockCft)} cft across ${t.totalBrands} brands',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => StockScreen(),
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.accent.withValues(
-                                        alpha: 0.15,
-                                      ),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(
-                                      Icons.inventory_2_outlined,
-                                      color: AppColors.accent,
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Stock Overview',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '${formatGroupedNumber(t.stockCft)} cft across ${t.totalBrands} brands',
-                                          style: TextStyle(
-                                            color: AppColors.textSecondary,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Icon(
-                                    Icons.chevron_right,
-                                    color: AppColors.inactiveIcon,
-                                  ),
-                                ],
-                              ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.cardGap),
+                        _LinkCard(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: 'Debit & Credit',
+                          subtitle: t.money.isEmpty
+                              ? 'No entries yet'
+                              : 'Debit ${formatPkrCurrency(t.money.debit)}  •  Credit ${formatPkrCurrency(t.money.credit)}',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MoneyScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.cardGap),
+                        _LinkCard(
+                          icon: Icons.local_gas_station_outlined,
+                          title: 'Diesel',
+                          subtitle: t.diesel.isEmpty
+                              ? 'No entries yet'
+                              : '${formatLitres(t.diesel.litres)} L  •  ${formatPkrCurrency(t.diesel.amount)}',
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => DieselScreen(),
                             ),
                           ),
                         ),
@@ -410,6 +407,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
               title: const Text('Add sale'),
               onTap: () => Navigator.pop(context, 'sale'),
             ),
+            ListTile(
+              leading: Icon(
+                Icons.remove_circle_outline,
+                color: moneyTypeColor(MoneyType.debit),
+              ),
+              title: const Text('Add debit'),
+              onTap: () => Navigator.pop(context, 'debit'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.add_circle_outline,
+                color: moneyTypeColor(MoneyType.credit),
+              ),
+              title: const Text('Add credit'),
+              onTap: () => Navigator.pop(context, 'credit'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.local_gas_station_outlined,
+                color: AppColors.dieselColor,
+              ),
+              title: const Text('Add diesel'),
+              onTap: () => Navigator.pop(context, 'diesel'),
+            ),
             const SizedBox(height: 8),
           ],
         ),
@@ -417,11 +438,89 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
     if (choice == null || !context.mounted) return;
 
+    if (choice == 'debit' || choice == 'credit') {
+      await openMoneyForm(
+        context,
+        initialType: choice == 'debit' ? MoneyType.debit : MoneyType.credit,
+      );
+      return;
+    }
+    if (choice == 'diesel') {
+      await openDieselForm(context);
+      return;
+    }
     final isPurchase = choice == 'purchase';
     await openEntryForm(
       context,
       title: isPurchase ? 'Purchase' : 'Sale',
       repository: isPurchase ? Repos.instance.purchases : Repos.instance.sales,
+    );
+  }
+}
+
+/// A tappable Dashboard card: icon badge, title, one line of detail, chevron
+/// (Stock Overview, Debit & Credit, Diesel).
+class _LinkCard extends StatelessWidget {
+  const _LinkCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1.5,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: AppColors.accent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: AppColors.inactiveIcon),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

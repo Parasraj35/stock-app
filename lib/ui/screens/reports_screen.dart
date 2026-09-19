@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../widgets/settings_row.dart';
+import 'diesel_report_screen.dart';
 import 'merged_report_screen.dart';
+import 'money_report_screen.dart';
 import 'monthly_report_screen.dart';
 import 'party_statement_screen.dart';
 import 'stock_screen.dart';
 import 'vehicle_report_screen.dart';
 
-/// Hub for reports — Purchase, Sale, combined, Party Statement, Vehicle and Stock.
+/// Hub for reports — Purchase, Sale, combined, Party Statement, Vehicle,
+/// Debit & Credit, Diesel and Stock.
 /// Each opens an in-app view of every entry with Share and Print in the top
 /// bar, reachable from Settings.
 class ReportsScreen extends StatelessWidget {
@@ -67,6 +70,24 @@ class ReportsScreen extends StatelessWidget {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => VehicleReportScreen()),
+            ),
+          ),
+          SettingsRow(
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'Debit & Credit Report',
+            subtitle: 'Every debit and credit, by party or vehicle',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => MoneyReportScreen()),
+            ),
+          ),
+          SettingsRow(
+            icon: Icons.local_gas_station_outlined,
+            label: 'Diesel Report',
+            subtitle: 'Litres, price and total, by vehicle',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => DieselReportScreen()),
             ),
           ),
           SettingsRow(

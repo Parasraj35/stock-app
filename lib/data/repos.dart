@@ -11,6 +11,8 @@ class Repos {
     required this.sales,
     required this.parties,
     required this.vehicles,
+    required this.money,
+    required this.diesel,
   });
 
   final UserRepository users;
@@ -19,6 +21,8 @@ class Repos {
   final EntryRepository sales;
   final PartyRepository parties;
   final VehicleRepository vehicles;
+  final MoneyRepository money;
+  final DieselRepository diesel;
 
   static Repos? _instance;
   static Repos get instance {
@@ -41,6 +45,8 @@ class Repos {
       sales: SqliteEntryRepository(db, salesTable),
       parties: SqlitePartyRepository(db),
       vehicles: SqliteVehicleRepository(db),
+      money: SqliteMoneyRepository(db),
+      diesel: SqliteDieselRepository(db),
     );
     _instance = repos;
     return repos;

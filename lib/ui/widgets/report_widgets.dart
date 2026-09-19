@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/format.dart';
 import '../../core/models.dart';
 import '../theme/tokens.dart';
+import 'list_summary.dart';
 
 /// One entry as a compact voucher row for the report screens — party/brand
 /// and amount, date and vehicle, and the full round × cft @ rate breakdown.
@@ -201,6 +202,178 @@ class MonthHeader extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w800,
               color: trailingColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Debit and Credit each get a fixed color — neutral orange / teal, no
+/// good-or-bad meaning — used on badges, accent bars and amounts.
+Color moneyTypeColor(MoneyType type) =>
+    type == MoneyType.debit ? AppColors.saleColor : AppColors.purchaseColor;
+
+/// One Debit/Credit entry: type badge, party or vehicle, date and rupees. With [onTap]
+/// and [onDelete] it's an editable list row; without them, a report row.
+class MoneyTile extends StatelessWidget {
+  const MoneyTile({super.key, required this.entry, this.onTap, this.onDelete});
+
+  final MoneyEntry entry;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = moneyTypeColor(entry.type);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 1.5,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: color),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              entry.type.label.toUpperCase(),
+                              style: TextStyle(
+                                color: color,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              entry.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            formatPkrCurrency(entry.amount),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.calendar_today_outlined,
+                            size: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            entry.date,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Icon(
+                            entry.target == MoneyTarget.vehicle
+                                ? Icons.local_shipping_outlined
+                                : Icons.person_outline,
+                            size: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              entry.target.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          if (onDelete != null)
+                            CardIconButton(
+                              tooltip: 'Delete',
+                              icon: Icons.delete_outline,
+                              color: AppColors.negative,
+                              onPressed: onDelete!,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Total Debit and total Credit side by side.
+class MoneyTotalsCard extends StatelessWidget {
+  const MoneyTotalsCard({super.key, required this.debit, required this.credit});
+
+  final double debit;
+  final double credit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: StatColumn(
+              label: 'TOTAL DEBIT',
+              value: debit,
+              color: moneyTypeColor(MoneyType.debit),
+            ),
+          ),
+          Expanded(
+            child: StatColumn(
+              label: 'TOTAL CREDIT',
+              value: credit,
+              color: moneyTypeColor(MoneyType.credit),
             ),
           ),
         ],

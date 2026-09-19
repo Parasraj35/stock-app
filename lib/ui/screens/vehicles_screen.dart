@@ -278,14 +278,14 @@ class _VehicleCard extends StatelessWidget {
                       color: AppColors.saleColor,
                     ),
                   ),
-                  _CardIconButton(
+                  CardIconButton(
                     tooltip: 'Statement',
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.accent,
                     onPressed: onStatement,
                   ),
                   const SizedBox(width: 8),
-                  _CardIconButton(
+                  CardIconButton(
                     tooltip: 'Delete vehicle',
                     icon: Icons.delete_outline,
                     color: AppColors.negative,
@@ -296,36 +296,6 @@ class _VehicleCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CardIconButton extends StatelessWidget {
-  const _CardIconButton({
-    required this.tooltip,
-    required this.icon,
-    required this.color,
-    required this.onPressed,
-  });
-  final String tooltip;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        icon: Icon(icon, color: color, size: 18),
-        onPressed: onPressed,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       ),
     );
   }

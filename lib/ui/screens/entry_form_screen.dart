@@ -7,7 +7,8 @@ import '../../core/vehicles.dart';
 import '../../data/repos.dart';
 import '../../data/repositories.dart';
 import '../theme/tokens.dart';
-import 'party_form_screen.dart';
+import '../widgets/date_field.dart';
+import '../widgets/party_field.dart';
 
 /// Add/edit form shared by both the Purchase and Sale screens — same fields,
 /// same live totalCFT/amount calculation, only the repository + label and
@@ -41,7 +42,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
   late DateTime _date;
   late final _party = TextEditingController(text: widget.existing?.party ?? '');
   final _partyFocusNode = FocusNode();
-  late final List<Party> _parties = [...widget.parties];
   late final _cftPerVehicle = TextEditingController(
     text: widget.existing != null
         ? _trimZeros(widget.existing!.cftPerVehicle)
@@ -94,7 +94,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
       _rate.text = formatDecimal(_rateFor(_selectedBrand!));
     }
     _lastCftText = _cftPerVehicle.text;
-    _party.addListener(() => setState(() {}));
     _cftPerVehicle.addListener(_onCftChanged);
     for (final c in [_round, _rate]) {
       c.addListener(() => setState(() {}));
@@ -148,29 +147,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     setState(() {});
   }
 
-  /// True when a party name has been typed that isn't in the party list yet.
-  bool get _partyIsNew {
-    final name = _party.text.trim().toLowerCase();
-    return name.isNotEmpty &&
-        !_parties.any((p) => p.name.trim().toLowerCase() == name);
-  }
-
-  /// Adds the typed party on the spot (full-screen form, name pre-filled) and
-  /// selects it here when saved.
-  Future<void> _addParty() async {
-    final saved = await Navigator.push<Party>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PartyFormScreen(initialName: _party.text.trim()),
-      ),
-    );
-    if (saved == null || !mounted) return;
-    setState(() {
-      _parties.add(saved);
-      _party.text = saved.name;
-    });
-  }
-
   @override
   void dispose() {
     _party.dispose();
@@ -191,16 +167,6 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
     final cft = double.tryParse(_cftPerVehicle.text.trim()) ?? 0;
     final rate = double.tryParse(_rate.text.trim()) ?? 0;
     return calcEntryTotals(round, cft, rate);
-  }
-
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) setState(() => _date = picked);
   }
 
   Future<void> _submit() async {
@@ -258,94 +224,16 @@ class _EntryFormScreenState extends State<EntryFormScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    InkWell(
-                      onTap: _pickDate,
-                      child: InputDecorator(
-                        decoration: const InputDecoration(labelText: 'DATE'),
-                        child: Text(formatDateIso(_date)),
-                      ),
+                    DateField(
+                      value: _date,
+                      onChanged: (d) => setState(() => _date = d),
                     ),
                     const SizedBox(height: 14),
-                    Autocomplete<Party>(
-                      textEditingController: _party,
+                    PartyField(
+                      controller: _party,
                       focusNode: _partyFocusNode,
-                      optionsBuilder: (v) {
-                        final q = v.text.trim().toLowerCase();
-                        if (q.isEmpty) return const Iterable<Party>.empty();
-                        return _parties.where(
-                          (p) => p.name.toLowerCase().contains(q),
-                        );
-                      },
-                      displayStringForOption: (p) => p.name,
-                      onSelected: (p) => _party.text = p.name,
-                      fieldViewBuilder:
-                          (context, controller, focusNode, onFieldSubmitted) {
-                            return TextFormField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              decoration: const InputDecoration(
-                                labelText: 'PARTY',
-                              ),
-                              validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Required'
-                                  : null,
-                            );
-                          },
-                      optionsViewBuilder: (context, onSelected, options) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(AppRadii.card),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxHeight: 220,
-                                minWidth: 260,
-                              ),
-                              child: ListView.builder(
-                                padding: EdgeInsets.zero,
-                                shrinkWrap: true,
-                                itemCount: options.length,
-                                itemBuilder: (context, i) {
-                                  final p = options.elementAt(i);
-                                  return ListTile(
-                                    dense: true,
-                                    title: Text(p.name),
-                                    subtitle:
-                                        (p.phone != null && p.phone!.isNotEmpty)
-                                        ? Text(p.phone!)
-                                        : null,
-                                    onTap: () => onSelected(p),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                      parties: widget.parties,
                     ),
-                    // Only when the typed party isn't in the list yet.
-                    if (_partyIsNew)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: _addParty,
-                          icon: const Icon(
-                            Icons.person_add_alt_1_outlined,
-                            size: 18,
-                          ),
-                          label: Text(
-                            'Add "${_party.text.trim()}" as a new party',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            minimumSize: const Size(0, 36),
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                      ),
                     const SizedBox(height: 14),
                     DropdownButtonFormField<Brand>(
                       initialValue: _selectedBrand,

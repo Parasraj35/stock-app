@@ -106,16 +106,19 @@ class DateRange {
   const DateRange({this.from, this.to});
 
   bool get isEmpty => from == null && to == null;
+
+  /// Whether the ISO date (yyyy-MM-dd) falls inside the range, bounds included.
+  bool containsIso(String iso) {
+    final d = DateTime.parse(iso);
+    if (from != null && d.isBefore(from!)) return false;
+    if (to != null && d.isAfter(to!)) return false;
+    return true;
+  }
 }
 
 List<Entry> filterByDateRange(List<Entry> entries, DateRange range) {
   if (range.isEmpty) return entries;
-  return entries.where((e) {
-    final d = DateTime.parse(e.date);
-    if (range.from != null && d.isBefore(range.from!)) return false;
-    if (range.to != null && d.isAfter(range.to!)) return false;
-    return true;
-  }).toList();
+  return entries.where((e) => range.containsIso(e.date)).toList();
 }
 
 /// One month of the combined Purchase & Sale report: every purchase and
@@ -204,4 +207,113 @@ List<VehicleGroup> groupLedgerByVehicle(
     for (final n in numbers) VehicleGroup(n, byVehicle[n]!),
     if (byVehicle.containsKey(null)) VehicleGroup(null, byVehicle[null]!),
   ];
+}
+
+/// Totals of a list of Debit/Credit entries.
+extension MoneyTotals on List<MoneyEntry> {
+  double get debit => where(
+    (e) => e.type == MoneyType.debit,
+  ).fold<double>(0, (sum, e) => sum + e.amount);
+  double get credit => where(
+    (e) => e.type == MoneyType.credit,
+  ).fold<double>(0, (sum, e) => sum + e.amount);
+}
+
+/// [items] grouped by calendar month (from the ISO date), most recent month
+/// first, newest item first within each month (a later id breaks a same-day
+/// tie).
+Map<String, List<T>> _groupByMonthNewestFirst<T>(
+  List<T> items,
+  String Function(T) dateOf,
+  int? Function(T) idOf,
+) {
+  final sorted = [...items]
+    ..sort((a, b) {
+      final byDate = dateOf(b).compareTo(dateOf(a));
+      return byDate != 0 ? byDate : (idOf(b) ?? 0).compareTo(idOf(a) ?? 0);
+    });
+  final byMonth = <String, List<T>>{};
+  for (final item in sorted) {
+    byMonth.putIfAbsent(dateOf(item).substring(0, 7), () => []).add(item);
+  }
+  return byMonth;
+}
+
+/// One month of the Debit & Credit report: every entry (newest first).
+class MoneyMonthGroup {
+  final String monthKey; // 'yyyy-MM'
+  final List<MoneyEntry> entries;
+  const MoneyMonthGroup(this.monthKey, this.entries);
+}
+
+/// Every Debit/Credit entry grouped by calendar month, most recent month
+/// first, newest entry first within each month.
+List<MoneyMonthGroup> groupMoneyByMonth(List<MoneyEntry> entries) => [
+  for (final month in _groupByMonthNewestFirst(
+    entries,
+    (e) => e.date,
+    (e) => e.id,
+  ).entries)
+    MoneyMonthGroup(month.key, month.value),
+];
+
+/// Totals of a list of diesel entries.
+extension DieselTotals on List<DieselEntry> {
+  double get litres => fold<double>(0, (sum, e) => sum + e.litres);
+  double get amount => fold<double>(0, (sum, e) => sum + e.total);
+}
+
+/// One month of the Diesel report: every entry (newest first).
+class DieselMonthGroup {
+  final String monthKey; // 'yyyy-MM'
+  final List<DieselEntry> entries;
+  const DieselMonthGroup(this.monthKey, this.entries);
+}
+
+/// Every diesel entry grouped by calendar month, most recent month first,
+/// newest entry first within each month.
+List<DieselMonthGroup> groupDieselByMonth(List<DieselEntry> entries) => [
+  for (final month in _groupByMonthNewestFirst(
+    entries,
+    (e) => e.date,
+    (e) => e.id,
+  ).entries)
+    DieselMonthGroup(month.key, month.value),
+];
+
+/// What one vehicle used: how many fill-ups, litres, and rupees.
+class DieselVehicleTotal {
+  final String vehicleNo;
+  final int fills;
+  final double litres;
+  final double amount;
+  const DieselVehicleTotal({
+    required this.vehicleNo,
+    required this.fills,
+    required this.litres,
+    required this.amount,
+  });
+}
+
+/// Diesel per vehicle, the biggest user (most litres) first; vehicles with the
+/// same litres are in number order.
+List<DieselVehicleTotal> dieselByVehicle(List<DieselEntry> entries) {
+  final byVehicle = <String, List<DieselEntry>>{};
+  for (final e in entries) {
+    byVehicle.putIfAbsent(e.vehicleNo, () => []).add(e);
+  }
+  final totals = [
+    for (final v in byVehicle.entries)
+      DieselVehicleTotal(
+        vehicleNo: v.key,
+        fills: v.value.length,
+        litres: v.value.litres,
+        amount: v.value.amount,
+      ),
+  ];
+  totals.sort((a, b) {
+    final byLitres = b.litres.compareTo(a.litres);
+    return byLitres != 0 ? byLitres : a.vehicleNo.compareTo(b.vehicleNo);
+  });
+  return totals;
 }

@@ -37,6 +37,20 @@ abstract class PartyRepository {
   Future<void> delete(int id);
 }
 
+abstract class MoneyRepository {
+  Future<List<MoneyEntry>> list();
+  Future<MoneyEntry> add(MoneyEntry entry);
+  Future<void> update(MoneyEntry entry);
+  Future<void> delete(int id);
+}
+
+abstract class DieselRepository {
+  Future<List<DieselEntry>> list();
+  Future<DieselEntry> add(DieselEntry entry);
+  Future<void> update(DieselEntry entry);
+  Future<void> delete(int id);
+}
+
 abstract class VehicleRepository {
   Future<List<Vehicle>> list();
   Future<Vehicle> add(Vehicle vehicle);
@@ -171,6 +185,76 @@ class SqlitePartyRepository implements PartyRepository {
   @override
   Future<void> delete(int id) async {
     await _db.db.delete(partiesTable, where: 'id = ?', whereArgs: [id]);
+    DataBus.instance.notifyChanged();
+  }
+}
+
+class SqliteMoneyRepository implements MoneyRepository {
+  SqliteMoneyRepository(this._db);
+  final AppDatabase _db;
+
+  @override
+  Future<List<MoneyEntry>> list() async {
+    final rows = await _db.db.query(moneyTable, orderBy: 'date DESC, id DESC');
+    return rows.map(MoneyEntry.fromMap).toList();
+  }
+
+  @override
+  Future<MoneyEntry> add(MoneyEntry entry) async {
+    final id = await _db.db.insert(moneyTable, entry.toMap()..remove('id'));
+    DataBus.instance.notifyChanged();
+    return entry.copyWith(id: id);
+  }
+
+  @override
+  Future<void> update(MoneyEntry entry) async {
+    await _db.db.update(
+      moneyTable,
+      entry.toMap(),
+      where: 'id = ?',
+      whereArgs: [entry.id],
+    );
+    DataBus.instance.notifyChanged();
+  }
+
+  @override
+  Future<void> delete(int id) async {
+    await _db.db.delete(moneyTable, where: 'id = ?', whereArgs: [id]);
+    DataBus.instance.notifyChanged();
+  }
+}
+
+class SqliteDieselRepository implements DieselRepository {
+  SqliteDieselRepository(this._db);
+  final AppDatabase _db;
+
+  @override
+  Future<List<DieselEntry>> list() async {
+    final rows = await _db.db.query(dieselTable, orderBy: 'date DESC, id DESC');
+    return rows.map(DieselEntry.fromMap).toList();
+  }
+
+  @override
+  Future<DieselEntry> add(DieselEntry entry) async {
+    final id = await _db.db.insert(dieselTable, entry.toMap()..remove('id'));
+    DataBus.instance.notifyChanged();
+    return entry.copyWith(id: id);
+  }
+
+  @override
+  Future<void> update(DieselEntry entry) async {
+    await _db.db.update(
+      dieselTable,
+      entry.toMap(),
+      where: 'id = ?',
+      whereArgs: [entry.id],
+    );
+    DataBus.instance.notifyChanged();
+  }
+
+  @override
+  Future<void> delete(int id) async {
+    await _db.db.delete(dieselTable, where: 'id = ?', whereArgs: [id]);
     DataBus.instance.notifyChanged();
   }
 }

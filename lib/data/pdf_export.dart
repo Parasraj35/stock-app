@@ -388,3 +388,176 @@ Future<Uint8List> buildVehicleReportPdf({
   );
   return doc.save();
 }
+
+/// Debit & Credit — every entry, month by month with each month's debit and
+/// credit, then a grand total. [showType] adds a Debit/Credit column when
+/// both are included; [showParty] / [showVehicle] pick the Party and Vehicle
+/// columns (an entry is for one or the other, the other shows "-").
+Future<Uint8List> buildMoneyReportPdf({
+  required String? businessName,
+  required String title,
+  required String filters,
+  required List<MoneyMonthGroup> groups,
+  required bool showType,
+  bool showParty = true,
+  bool showVehicle = true,
+}) async {
+  final cols = <_Col<MoneyEntry>>[
+    _Col('Date', pw.FixedColumnWidth(64), (e) => e.date),
+    if (showType) _Col('Type', pw.FixedColumnWidth(54), (e) => e.type.label),
+    if (showParty) _Col('Party', pw.FlexColumnWidth(1), (e) => e.party ?? '-'),
+    if (showVehicle)
+      _Col('Vehicle', pw.FlexColumnWidth(1), (e) => e.vehicleNo ?? '-'),
+    _Col(
+      'Rupees',
+      pw.FixedColumnWidth(96),
+      (e) => formatGroupedNumber(e.amount),
+      numeric: true,
+    ),
+  ];
+  final all = [for (final g in groups) ...g.entries];
+
+  String totals(List<MoneyEntry> entries) =>
+      'Debit ${formatPkrCurrency(entries.debit)} | Credit ${formatPkrCurrency(entries.credit)}';
+
+  final doc = pw.Document();
+  doc.addPage(
+    pw.MultiPage(
+      maxPages: _maxPages,
+      margin: _pageMargin,
+      build: (context) => [
+        _header(businessName, title, filters: filters),
+        pw.SizedBox(height: 4),
+        for (final g in groups) ...[
+          _monthHeading(
+            formatMonthLabel(g.monthKey),
+            '${g.entries.length} entries | ${totals(g.entries)}',
+          ),
+          _table(cols, g.entries),
+        ],
+        pw.SizedBox(height: 12),
+        pw.Divider(),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Grand total: ${all.length} entries | ${totals(all)}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+      ],
+    ),
+  );
+  return doc.save();
+}
+
+/// Diesel — a "litres by vehicle" summary (when more than one vehicle is in
+/// the report), then every entry month by month (date, vehicle, litres,
+/// price, total), and at the very end the total litres and total amount.
+Future<Uint8List> buildDieselReportPdf({
+  required String? businessName,
+  required String title,
+  required String filters,
+  required List<DieselMonthGroup> groups,
+  required List<DieselVehicleTotal> byVehicle,
+}) async {
+  final cols = <_Col<DieselEntry>>[
+    _Col('Date', pw.FixedColumnWidth(64), (e) => e.date),
+    _Col('Vehicle', pw.FlexColumnWidth(1), (e) => e.vehicleNo),
+    _Col(
+      'Litres',
+      pw.FixedColumnWidth(64),
+      (e) => formatLitres(e.litres),
+      numeric: true,
+    ),
+    _Col(
+      'Price (Rs/L)',
+      pw.FixedColumnWidth(70),
+      (e) => formatDecimal(e.price),
+      numeric: true,
+    ),
+    _Col(
+      'Total (Rs)',
+      pw.FixedColumnWidth(80),
+      (e) => formatGroupedNumber(e.total),
+      numeric: true,
+    ),
+  ];
+  final vehicleCols = <_Col<DieselVehicleTotal>>[
+    _Col('Vehicle', pw.FlexColumnWidth(1), (v) => v.vehicleNo),
+    _Col(
+      'Fill-ups',
+      pw.FixedColumnWidth(54),
+      (v) => v.fills.toString(),
+      numeric: true,
+    ),
+    _Col(
+      'Litres',
+      pw.FixedColumnWidth(80),
+      (v) => formatLitres(v.litres),
+      numeric: true,
+    ),
+    _Col(
+      'Total (Rs)',
+      pw.FixedColumnWidth(90),
+      (v) => formatGroupedNumber(v.amount),
+      numeric: true,
+    ),
+  ];
+  final all = [for (final g in groups) ...g.entries];
+
+  String totals(List<DieselEntry> entries) =>
+      '${formatLitres(entries.litres)} L | ${formatPkrCurrency(entries.amount)}';
+
+  final doc = pw.Document();
+  doc.addPage(
+    pw.MultiPage(
+      maxPages: _maxPages,
+      margin: _pageMargin,
+      build: (context) => [
+        _header(businessName, title, filters: filters),
+        pw.SizedBox(height: 4),
+        if (byVehicle.length > 1) ...[
+          _monthHeading('Litres by vehicle', '${byVehicle.length} vehicles'),
+          _table(vehicleCols, byVehicle),
+        ],
+        for (final g in groups) ...[
+          _monthHeading(
+            formatMonthLabel(g.monthKey),
+            '${g.entries.length} ${g.entries.length == 1 ? 'entry' : 'entries'} | ${totals(g.entries)}',
+          ),
+          _table(cols, g.entries),
+        ],
+        pw.SizedBox(height: 12),
+        pw.Divider(),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.end,
+            children: [
+              pw.Text(
+                'Total of ${all.length} ${all.length == 1 ? 'entry' : 'entries'}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+              pw.SizedBox(height: 2),
+              pw.Text(
+                'Total litres: ${formatLitres(all.litres)} L',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.Text(
+                'Total amount: ${formatPkrCurrency(all.amount)}',
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+  return doc.save();
+}

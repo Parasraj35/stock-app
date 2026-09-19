@@ -37,6 +37,16 @@ String formatDecimal(num value) {
       : rounded.toString();
 }
 
+/// Litres with South Asian grouping and up to two decimals, trailing zeros
+/// dropped (12345.5 -> "12,345.5", 100 -> "100"). [formatGroupedNumber] would
+/// round 45.5 litres to 46.
+String formatLitres(num value) {
+  final parts = formatDecimal(value.abs()).split('.');
+  final whole = formatGroupedNumber(int.parse(parts[0]));
+  final sign = value < 0 && (parts[0] != '0' || parts.length > 1) ? '-' : '';
+  return parts.length > 1 ? '$sign$whole.${parts[1]}' : '$sign$whole';
+}
+
 /// yyyy-MM-dd, the format Entry.date is stored/compared as.
 String formatDateIso(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';

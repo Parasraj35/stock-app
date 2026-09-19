@@ -113,3 +113,37 @@ class StatColumn extends StatelessWidget {
     );
   }
 }
+
+/// A small tinted square icon button for a list card's footer (delete,
+/// statement, …).
+class CardIconButton extends StatelessWidget {
+  const CardIconButton({
+    super.key,
+    required this.tooltip,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: IconButton(
+        tooltip: tooltip,
+        icon: Icon(icon, color: color, size: 18),
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+      ),
+    );
+  }
+}

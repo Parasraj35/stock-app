@@ -9,6 +9,8 @@ const purchasesTable = 'purchases';
 const salesTable = 'sales';
 const partiesTable = 'parties';
 const vehiclesTable = 'vehicles';
+const moneyTable = 'money_entries';
+const dieselTable = 'diesel_entries';
 
 const _partiesSchema = '''
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +49,58 @@ Future<void> _createAndSeedVehicles(Database db) async {
   }
 }
 
+// A Debit/Credit entry is for a party or a vehicle: exactly one is filled in.
+const _moneySchema = '''
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    party TEXT,
+    vehicleNo TEXT,
+    amount REAL NOT NULL,
+    type TEXT NOT NULL,
+    CHECK ((party IS NULL) <> (vehicleNo IS NULL))
+''';
+
+/// Debit & Credit was first saved per party (schema 9), then briefly per
+/// vehicle (schema 10); it is now for either. Rebuilds the table with both
+/// columns and keeps every entry.
+Future<void> _rebuildMoneyTable(Database db, int oldVersion) async {
+  const fresh = '${moneyTable}_new';
+  await db.execute('CREATE TABLE $fresh ($_moneySchema)');
+  if (oldVersion == 9) {
+    // Schema 9 only had parties.
+    await db.execute(
+      'INSERT INTO $fresh (id, date, party, vehicleNo, amount, type) '
+      'SELECT id, date, party, NULL, amount, type FROM $moneyTable',
+    );
+  } else {
+    // Schema 10 kept one name in `vehicleNo`. A saved party's name that is not
+    // also a saved vehicle was a party (from schema 9); the rest are vehicles.
+    const isParty =
+        'EXISTS (SELECT 1 FROM $partiesTable p '
+        'WHERE p.name = m.vehicleNo COLLATE NOCASE) '
+        'AND NOT EXISTS (SELECT 1 FROM $vehiclesTable v '
+        'WHERE v.vehicleNo = m.vehicleNo COLLATE NOCASE)';
+    await db.execute(
+      'INSERT INTO $fresh (id, date, party, vehicleNo, amount, type) '
+      'SELECT id, date, '
+      'CASE WHEN $isParty THEN vehicleNo END, '
+      'CASE WHEN NOT ($isParty) THEN vehicleNo END, '
+      'amount, type FROM $moneyTable m',
+    );
+  }
+  await db.execute('DROP TABLE $moneyTable');
+  await db.execute('ALTER TABLE $fresh RENAME TO $moneyTable');
+}
+
+const _dieselSchema = '''
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT NOT NULL,
+    vehicleNo TEXT NOT NULL,
+    litres REAL NOT NULL,
+    price REAL NOT NULL,
+    CHECK (litres > 0 AND price > 0)
+''';
+
 const _entryColumns = '''
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
@@ -72,7 +126,7 @@ class AppDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'stock.db');
     final db = await openDatabase(
       dbPath,
-      version: 8,
+      version: 12,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE users (
@@ -100,6 +154,8 @@ class AppDatabase {
         await db.execute('CREATE TABLE $salesTable ($_entryColumns)');
         await db.execute('CREATE TABLE $partiesTable ($_partiesSchema)');
         await _createAndSeedVehicles(db);
+        await db.execute('CREATE TABLE $moneyTable ($_moneySchema)');
+        await db.execute('CREATE TABLE $dieselTable ($_dieselSchema)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -138,12 +194,18 @@ class AppDatabase {
           await db.execute('ALTER TABLE users ADD COLUMN themeMode TEXT');
         }
         if (oldVersion < 7) {
-          await db.execute(
-            'ALTER TABLE users ADD COLUMN profilePicPath TEXT',
-          );
+          await db.execute('ALTER TABLE users ADD COLUMN profilePicPath TEXT');
         }
         if (oldVersion < 8) {
           await _createAndSeedVehicles(db);
+        }
+        if (oldVersion < 9) {
+          await db.execute('CREATE TABLE $moneyTable ($_moneySchema)');
+        } else if (oldVersion < 11) {
+          await _rebuildMoneyTable(db, oldVersion);
+        }
+        if (oldVersion < 12) {
+          await db.execute('CREATE TABLE $dieselTable ($_dieselSchema)');
         }
       },
     );
